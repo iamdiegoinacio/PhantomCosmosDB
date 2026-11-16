@@ -14,6 +14,8 @@ internal sealed record CosmosPhantomLogEntry(
     int StatusCode,
     int SubStatusCode,
     double RequestCharge,
+    double EstimatedCostUsd,
+    string RegionId,
     double DurationMs,
     string? SqlQuery,
     bool IsChaosInjected);

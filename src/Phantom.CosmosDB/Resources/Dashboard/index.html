@@ -16,6 +16,11 @@
       </div>
     </div>
     <div class="header-actions">
+      <select id="header-region" onchange="updateCostSettings()" title="Região Azure para cálculo de custos"></select>
+      <label class="pill row" style="gap:6px; cursor:pointer">
+        <input type="checkbox" id="header-log-cost" onchange="updateCostSettings()" />
+        LogQueryCost
+      </label>
       <span class="pill ok">Emulador Ativo</span>
       <span id="chaos-pill" class="pill">Chaos: Desligado</span>
       <button class="btn secondary" onclick="refreshAll()">Atualizar</button>
@@ -26,6 +31,7 @@
   <nav>
     <button class="active" data-tab="overview" onclick="switchTab('overview', this)">Visão Geral</button>
     <button data-tab="explorer" onclick="switchTab('explorer', this)">Data Explorer &amp; SQL</button>
+    <button data-tab="cost" onclick="switchTab('cost', this)">Simulador de Custos</button>
     <button data-tab="chaos" onclick="switchTab('chaos', this)">Chaos Engineering (Live)</button>
     <button data-tab="logs" onclick="switchTab('logs', this)">Logs ao Vivo</button>
     <button data-tab="config" onclick="switchTab('config', this)">phantom.config.json</button>
@@ -78,6 +84,106 @@
             <button class="btn" onclick="upsertItem()">Salvar / Upsert</button>
           </div>
         </div>
+      </div>
+    </section>
+
+    <section id="tab-cost" class="tab">
+      <div class="card">
+        <div class="row space-between">
+          <div>
+            <h3 class="card-title">Simulador de Custos Regionais &amp; Queries (Estudo Azure Cosmos DB)</h3>
+            <small class="muted-hint">Simule SQL, quantidade de itens, tamanho dos documentos, IndexingPolicy e compare preços entre 14 países.</small>
+          </div>
+          <div class="row">
+            <button class="btn secondary sm" onclick="applyCostPreset('efficient')">Preset: Query Indexada (10 RU)</button>
+            <button class="btn secondary sm" onclick="applyCostPreset('cross')">Preset: Cross-Partition</button>
+            <button class="btn secondary sm" onclick="applyCostPreset('scan')">Preset: IndexingMode.None Scan</button>
+            <button class="btn" onclick="runCostSimulation()">Simular Custo</button>
+          </div>
+        </div>
+
+        <div class="grid mt">
+          <div class="field">
+            <label for="sim-region">País / Região Azure</label>
+            <select id="sim-region" onchange="runCostSimulation()"></select>
+          </div>
+          <div class="field">
+            <label for="sim-container-import">Importar Topologia do Container</label>
+            <select id="sim-container-import" onchange="importContainerIntoSimulator()"></select>
+          </div>
+          <div class="field">
+            <label for="sim-indexing-mode">IndexingPolicy Mode</label>
+            <select id="sim-indexing-mode" onchange="runCostSimulation()">
+              <option value="Consistent">Consistent (Indexado)</option>
+              <option value="None">None (Sem Índice / Full Scan)</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="sim-consistency">Consistency Level</label>
+            <select id="sim-consistency" onchange="runCostSimulation()">
+              <option value="Session">Session / Eventual (1x)</option>
+              <option value="Strong">Strong (2x RU)</option>
+              <option value="BoundedStaleness">BoundedStaleness (2x RU)</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="grid mt">
+          <div class="field"><label for="sim-total-items">Nº de Itens no Banco</label><input type="number" id="sim-total-items" value="100000" min="1" /></div>
+          <div class="field"><label for="sim-returned-items">Itens Retornados / Query</label><input type="number" id="sim-returned-items" value="100" min="0" /></div>
+          <div class="field"><label for="sim-doc-kb">Tamanho Médio Doc (KB)</label><input type="number" id="sim-doc-kb" value="1" min="0.5" step="0.5" /></div>
+          <div class="field"><label for="sim-partitions">Partições Físicas</label><input type="number" id="sim-partitions" value="1" min="1" /></div>
+          <div class="field"><label for="sim-pk-paths">PartitionKeyPaths</label><input type="text" id="sim-pk-paths" value="/tenantId" /></div>
+          <div class="field"><label for="sim-queries-month">Queries / Mês</label><input type="number" id="sim-queries-month" value="1000000" min="0" /></div>
+          <div class="field"><label for="sim-storage-gb">Armazenamento (GB)</label><input type="number" id="sim-storage-gb" value="10" min="0" step="0.5" /></div>
+          <div class="field"><label for="sim-prov-override">RU/s Provisionado (0 = auto)</label><input type="number" id="sim-prov-override" value="400" min="0" step="100" /></div>
+        </div>
+
+        <div class="row mt">
+          <label class="row muted-hint"><input type="checkbox" id="sim-free-tier" onchange="runCostSimulation()" /> Aplicar Free Tier (1.000 RU/s + 25 GB)</label>
+          <label class="row muted-hint"><input type="checkbox" id="sim-az" onchange="runCostSimulation()" /> Availability Zones (+25%)</label>
+        </div>
+
+        <div class="mt">
+          <label for="sim-sql" class="muted-hint" style="display:block; margin-bottom:6px;">SQL Query a simular:</label>
+          <textarea id="sim-sql" rows="3">SELECT TOP 100 c.id, c.total, c.status FROM c WHERE c.tenantId = @tenantId AND c.status = 'paid' ORDER BY c.createdAt DESC</textarea>
+        </div>
+      </div>
+
+      <div class="grid mt">
+        <div class="card"><h3>RU Estimada / Query</h3><div class="metric" id="sim-ru-exec">-</div></div>
+        <div class="card"><h3>Volume Mensal</h3><div class="metric" id="sim-monthly-mru">-</div></div>
+        <div class="card"><h3>Break-Even (400 RU/s)</h3><div class="metric" id="sim-breakeven">-</div></div>
+        <div class="card"><h3>Diferença vs East US 2</h3><div class="metric" id="sim-vs-eastus">-</div></div>
+      </div>
+
+      <div class="grid mt">
+        <div class="card">
+          <h3>Serverless (USD/mês)</h3>
+          <div class="metric" id="sim-serverless-usd">-</div>
+          <small id="sim-serverless-det" class="muted-hint"></small>
+        </div>
+        <div class="card">
+          <h3>Provisioned Manual (USD/mês)</h3>
+          <div class="metric" id="sim-prov-usd">-</div>
+          <small id="sim-prov-det" class="muted-hint"></small>
+        </div>
+        <div class="card">
+          <h3>Autoscale (USD/mês)</h3>
+          <div class="metric" id="sim-auto-usd">-</div>
+          <small id="sim-auto-det" class="muted-hint"></small>
+        </div>
+        <div class="card">
+          <h3>Baseline: EUA (East US 2)</h3>
+          <div style="font-size:16px; font-weight:700;" id="sim-baseline-usd">-</div>
+          <small class="muted-hint">Mesma carga e armazenamento em East US 2</small>
+        </div>
+      </div>
+
+      <div class="card mt">
+        <h3>Breakdown da Estimativa de RU</h3>
+        <div id="sim-breakdown" class="mt"></div>
+        <div id="sim-warnings" class="mt"></div>
       </div>
     </section>
 
@@ -159,6 +265,7 @@
                 <th>Status</th>
                 <th>Container</th>
                 <th>RU</th>
+                <th>Custo Est. (USD)</th>
                 <th>Tempo</th>
                 <th>Path / SQL</th>
               </tr>

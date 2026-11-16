@@ -19,6 +19,8 @@ internal sealed class CosmosPhantomTelemetryLog
         int statusCode,
         int subStatusCode,
         double requestCharge,
+        double estimatedCostUsd,
+        string regionId,
         double durationMs,
         string? sqlQuery,
         bool isChaosInjected)
@@ -33,6 +35,8 @@ internal sealed class CosmosPhantomTelemetryLog
             statusCode,
             subStatusCode,
             Math.Round(requestCharge, 2),
+            estimatedCostUsd,
+            regionId,
             Math.Round(durationMs, 2),
             sqlQuery,
             isChaosInjected));

@@ -1,0 +1,12 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "None",
+    "strict": true,
+    "noImplicitAny": true,
+    "outFile": "../../Resources/Dashboard/app.js",
+    "removeComments": false,
+    "lib": ["ES2020", "DOM", "DOM.Iterable"]
+  },
+  "files": ["app.ts"]
+}

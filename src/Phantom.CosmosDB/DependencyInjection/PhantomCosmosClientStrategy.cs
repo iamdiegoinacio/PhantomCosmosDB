@@ -7,6 +7,7 @@ using Microsoft.Extensions.Hosting;
 using Phantom.CosmosDB.ChaosEngineering;
 using Phantom.CosmosDB.Configuration;
 using Phantom.CosmosDB.Configuration.Connection;
+using Phantom.CosmosDB.Configuration.Cost;
 using Phantom.CosmosDB.Core;
 using Phantom.CosmosDB.Dashboard.State;
 using Phantom.CosmosDB.Exceptions;
@@ -68,12 +69,14 @@ internal sealed class PhantomCosmosClientStrategy : ICosmosClientRegistrationStr
         CosmosDbEmulatorConfig emulatorConfig)
     {
         var chaosConfig = CosmosChaosConfigResolver.Resolve(configuration, environment.ContentRootPath);
+        var costOptions = CosmosCostConfigResolver.Resolve(configuration, environment.ContentRootPath);
 
         var runtimeRegistry = new CosmosPhantomRuntimeRegistry
         {
             DatabaseName = emulatorConfig.DatabaseName,
             EmulatorConfig = emulatorConfig,
             LiveChaosConfig = chaosConfig,
+            LiveCostOptions = costOptions,
             RootConfigFilePath = PhantomResourcePathResolver.ResolveRootConfigFile(environment.ContentRootPath)
         };
         services.AddSingleton(runtimeRegistry);
@@ -106,7 +109,7 @@ internal sealed class PhantomCosmosClientStrategy : ICosmosClientRegistrationStr
             };
 
             options.HttpMessageHandlerWrapper = inner =>
-                new CosmosPhantomTelemetryHandler(inner, runtimeRegistry.TelemetryLog);
+                new CosmosPhantomTelemetryHandler(inner, runtimeRegistry);
         });
 
         if (emulatorConfig.Containers != null)

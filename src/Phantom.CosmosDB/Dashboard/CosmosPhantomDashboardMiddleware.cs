@@ -14,7 +14,9 @@ using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using Phantom.CosmosDB.ChaosEngineering;
 using Phantom.CosmosDB.Configuration;
+using Phantom.CosmosDB.Configuration.Cost;
 using Phantom.CosmosDB.Core;
+using Phantom.CosmosDB.Cost;
 using Phantom.CosmosDB.Dashboard.State;
 using Phantom.CosmosDB.Seeding.Interfaces;
 
@@ -124,6 +126,37 @@ internal sealed class CosmosPhantomDashboardMiddleware
             return;
         }
 
+        if (method == HttpMethods.Get && path.Equals("/api/cost/regions", StringComparison.OrdinalIgnoreCase))
+        {
+            await WriteJsonAsync(context, new { regions = CosmosRegionalPricingCatalog.All });
+            return;
+        }
+
+        if (path.Equals("/api/cost/settings", StringComparison.OrdinalIgnoreCase))
+        {
+            if (method == HttpMethods.Get)
+            {
+                await WriteJsonAsync(context, new
+                {
+                    settings = registry.LiveCostOptions,
+                    activeRegion = CosmosRegionalPricingCatalog.GetOrDefault(registry.LiveCostOptions.Region)
+                });
+                return;
+            }
+
+            if (method == HttpMethods.Put)
+            {
+                await HandleUpdateCostSettingsAsync(context, registry);
+                return;
+            }
+        }
+
+        if (method == HttpMethods.Post && path.Equals("/api/cost/simulate", StringComparison.OrdinalIgnoreCase))
+        {
+            await HandleSimulateCostAsync(context, registry);
+            return;
+        }
+
         if (path.StartsWith("/api/containers/", StringComparison.OrdinalIgnoreCase))
         {
             if (await TryHandleContainerRouteAsync(context, path, method, registry))
@@ -166,6 +199,8 @@ internal sealed class CosmosPhantomDashboardMiddleware
             totalItems = containers.Sum(c => c.itemCount),
             containerCount = containers.Count,
             chaosActive = IsAnyChaosEnabled(registry.LiveChaosConfig),
+            costOptions = registry.LiveCostOptions,
+            activeRegion = CosmosRegionalPricingCatalog.GetOrDefault(registry.LiveCostOptions.Region),
             containers
         };
     }
@@ -407,6 +442,13 @@ internal sealed class CosmosPhantomDashboardMiddleware
                 CopyChaosProperties(updatedChaos, registry.LiveChaosConfig);
             }
 
+            var costToken = parsedConfig["CosmosCostOptions"] ?? parsedConfig["CostOptions"];
+            var updatedCost = costToken?.ToObject<CosmosCostOptions>();
+            if (updatedCost != null)
+            {
+                CopyCostOptions(updatedCost, registry.LiveCostOptions);
+            }
+
             await WriteJsonAsync(context, new { saved = true, path = targetPath });
         }
         catch (JsonException ex)
@@ -441,6 +483,50 @@ internal sealed class CosmosPhantomDashboardMiddleware
         }
 
         await WriteJsonAsync(context, BuildOverviewPayload(registry));
+    }
+
+    private static async Task HandleUpdateCostSettingsAsync(HttpContext context, CosmosPhantomRuntimeRegistry registry)
+    {
+        var body = await ReadBodyAsync(context);
+        var updated = JsonConvert.DeserializeObject<CosmosCostOptions>(body);
+        if (updated == null)
+        {
+            await WriteJsonAsync(context, new { error = "Payload de CosmosCostOptions inválido." }, StatusCodes.Status400BadRequest);
+            return;
+        }
+
+        CopyCostOptions(updated, registry.LiveCostOptions);
+        await WriteJsonAsync(context, new
+        {
+            settings = registry.LiveCostOptions,
+            activeRegion = CosmosRegionalPricingCatalog.GetOrDefault(registry.LiveCostOptions.Region)
+        });
+    }
+
+    private static void CopyCostOptions(CosmosCostOptions source, CosmosCostOptions target)
+    {
+        if (CosmosRegionalPricingCatalog.TryGetRegion(source.Region, out var region))
+            target.Region = region.Id;
+        if (!string.IsNullOrWhiteSpace(source.BillingMode))
+            target.BillingMode = source.BillingMode;
+        target.LogQueryCost = source.LogQueryCost;
+        target.ApplyFreeTier = source.ApplyFreeTier;
+        if (!string.IsNullOrWhiteSpace(source.ConsistencyLevel))
+            target.ConsistencyLevel = source.ConsistencyLevel;
+        target.AvailabilityZones = source.AvailabilityZones;
+        target.AdditionalRegionsCount = Math.Max(0, source.AdditionalRegionsCount);
+        target.MultiRegionWrites = source.MultiRegionWrites;
+    }
+
+    private static async Task HandleSimulateCostAsync(HttpContext context, CosmosPhantomRuntimeRegistry registry)
+    {
+        var body = await ReadBodyAsync(context);
+        var req = JsonConvert.DeserializeObject<QueryCostSimulationRequest>(body) ?? new QueryCostSimulationRequest();
+        if (string.IsNullOrWhiteSpace(req.Region))
+            req.Region = registry.LiveCostOptions.Region;
+
+        var result = CosmosQueryCostSimulator.Simulate(req);
+        await WriteJsonAsync(context, result);
     }
 
     private static async Task<string> ReadBodyAsync(HttpContext context)
