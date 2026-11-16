@@ -140,18 +140,18 @@ public sealed class SeedGeneratorTests
 
             var http = app.GetTestClient();
 
-            var listJson = JObject.Parse(await http.GetStringAsync("/_phantom/api/seeds"));
+            var listJson = JObject.Parse(await http.GetStringAsync("/phantom/api/seeds"));
             Assert.Equal(1, listJson["items"]![0]!["seedItemCount"]?.Value<int>());
 
             var previewResp = await http.PostAsync(
-                "/_phantom/api/seeds/Clientes/preview",
+                "/phantom/api/seeds/Clientes/preview",
                 new StringContent("{\"idStrategy\":\"GuidV7\",\"randomSeed\":42}", Encoding.UTF8, "application/json"));
             Assert.Equal(HttpStatusCode.OK, previewResp.StatusCode);
             var previewJson = JObject.Parse(await previewResp.Content.ReadAsStringAsync());
             Assert.Equal(5, ((JArray)previewJson["items"]!).Count);
 
             var genResp = await http.PostAsync(
-                "/_phantom/api/seeds/Clientes/generate",
+                "/phantom/api/seeds/Clientes/generate",
                 new StringContent("{\"count\":50,\"mode\":\"PersistAndLoad\",\"append\":true,\"idStrategy\":\"Auto\",\"randomSeed\":42}", Encoding.UTF8, "application/json"));
             Assert.Equal(HttpStatusCode.Accepted, genResp.StatusCode);
             var jobId = JObject.Parse(await genResp.Content.ReadAsStringAsync())["jobId"]!.ToString();
@@ -160,7 +160,7 @@ public sealed class SeedGeneratorTests
             for (var i = 0; i < 50; i++)
             {
                 await Task.Delay(50);
-                finalStatus = JObject.Parse(await http.GetStringAsync($"/_phantom/api/seeds/jobs/{jobId}"));
+                finalStatus = JObject.Parse(await http.GetStringAsync($"/phantom/api/seeds/jobs/{jobId}"));
                 if (finalStatus["status"]?.ToString() != "Running")
                     break;
             }
@@ -169,7 +169,7 @@ public sealed class SeedGeneratorTests
             Assert.Equal("Completed", finalStatus!["status"]?.ToString());
             Assert.Equal(50, finalStatus["processedCount"]?.Value<int>());
 
-            var afterList = JObject.Parse(await http.GetStringAsync("/_phantom/api/seeds"));
+            var afterList = JObject.Parse(await http.GetStringAsync("/phantom/api/seeds"));
             Assert.Equal(51, afterList["items"]![0]!["seedItemCount"]?.Value<int>());
             Assert.Equal(51, afterList["items"]![0]!["inMemoryCount"]?.Value<int>());
 

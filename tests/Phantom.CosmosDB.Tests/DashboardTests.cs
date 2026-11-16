@@ -47,33 +47,33 @@ public sealed class DashboardTests
             var http = app.GetTestClient();
 
             // 1. HTML UI + separated CSS/JS assets
-            var htmlResp = await http.GetAsync("/_phantom");
+            var htmlResp = await http.GetAsync("/phantom");
             Assert.Equal(HttpStatusCode.OK, htmlResp.StatusCode);
             var html = await htmlResp.Content.ReadAsStringAsync();
             Assert.Contains("PhantomDB Dashboard", html, StringComparison.Ordinal);
-            Assert.Contains("/_phantom/assets/styles.css", html, StringComparison.Ordinal);
-            Assert.Contains("/_phantom/assets/app.js", html, StringComparison.Ordinal);
+            Assert.Contains("/phantom/assets/styles.css", html, StringComparison.Ordinal);
+            Assert.Contains("/phantom/assets/app.js", html, StringComparison.Ordinal);
 
-            var cssResp = await http.GetAsync("/_phantom/assets/styles.css");
+            var cssResp = await http.GetAsync("/phantom/assets/styles.css");
             Assert.Equal(HttpStatusCode.OK, cssResp.StatusCode);
             Assert.Equal("text/css", cssResp.Content.Headers.ContentType?.MediaType);
 
-            var jsResp = await http.GetAsync("/_phantom/assets/app.js");
+            var jsResp = await http.GetAsync("/phantom/assets/app.js");
             Assert.Equal(HttpStatusCode.OK, jsResp.StatusCode);
             Assert.Equal("application/javascript", jsResp.Content.Headers.ContentType?.MediaType);
 
-            var logoResp = await http.GetAsync("/_phantom/assets/logo.png");
+            var logoResp = await http.GetAsync("/phantom/assets/logo.png");
             Assert.Equal(HttpStatusCode.OK, logoResp.StatusCode);
             Assert.Equal("image/png", logoResp.Content.Headers.ContentType?.MediaType);
 
             // 2. Overview
-            var overview = JObject.Parse(await http.GetStringAsync("/_phantom/api/overview"));
+            var overview = JObject.Parse(await http.GetStringAsync("/phantom/api/overview"));
             Assert.Equal("LojaDb", overview["databaseName"]?.ToString());
             Assert.Equal(1, overview["totalItems"]?.Value<int>());
 
             // 3. Query Runner
             var queryResp = await http.PostAsync(
-                "/_phantom/api/containers/Produtos/query",
+                "/phantom/api/containers/Produtos/query",
                 new StringContent("{\"sql\":\"SELECT * FROM c\",\"enableScan\":true}", Encoding.UTF8, "application/json"));
             Assert.Equal(HttpStatusCode.OK, queryResp.StatusCode);
             var queryJson = JObject.Parse(await queryResp.Content.ReadAsStringAsync());
@@ -85,7 +85,7 @@ public sealed class DashboardTests
             Assert.Equal(HttpStatusCode.OK, okRead.StatusCode);
 
             var chaosPut = await http.PutAsync(
-                "/_phantom/api/chaos",
+                "/phantom/api/chaos",
                 new StringContent("{\"Simulate400_BadRequest\":true}", Encoding.UTF8, "application/json"));
             Assert.Equal(HttpStatusCode.OK, chaosPut.StatusCode);
 
@@ -94,20 +94,20 @@ public sealed class DashboardTests
             Assert.Equal(HttpStatusCode.BadRequest, ex.StatusCode);
 
             await http.PutAsync(
-                "/_phantom/api/chaos",
+                "/phantom/api/chaos",
                 new StringContent("{\"Simulate400_BadRequest\":false}", Encoding.UTF8, "application/json"));
 
             // 5. Logs captured both OK and Chaos 400
-            var logsJson = JObject.Parse(await http.GetStringAsync("/_phantom/api/logs"));
+            var logsJson = JObject.Parse(await http.GetStringAsync("/phantom/api/logs"));
             var logs = (JArray)logsJson["items"]!;
             Assert.Contains(logs, l => l["statusCode"]?.Value<int>() == 400 && l["isChaosInjected"]?.Value<bool>() == true);
 
             // 6. Upsert via Explorer + Reset & Re-seed restores initial count
             await http.PostAsync(
-                "/_phantom/api/containers/Produtos/items",
+                "/phantom/api/containers/Produtos/items",
                 new StringContent("{\"id\":\"p2\",\"categoria\":\"tech\",\"nome\":\"Teclado\"}", Encoding.UTF8, "application/json"));
 
-            var resetResp = await http.PostAsync("/_phantom/api/seed/reset", content: null);
+            var resetResp = await http.PostAsync("/phantom/api/seed/reset", content: null);
             Assert.Equal(HttpStatusCode.OK, resetResp.StatusCode);
             var resetOverview = JObject.Parse(await resetResp.Content.ReadAsStringAsync());
             Assert.Equal(1, resetOverview["totalItems"]?.Value<int>());
@@ -147,7 +147,7 @@ public sealed class DashboardTests
             await app.StartAsync();
 
             var http = app.GetTestClient();
-            var resp = await http.GetAsync("/_phantom");
+            var resp = await http.GetAsync("/phantom");
             Assert.Equal(HttpStatusCode.NotFound, resp.StatusCode);
 
             await app.StopAsync();

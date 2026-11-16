@@ -138,23 +138,23 @@ public sealed class CostSimulatorTests
 
             var http = app.GetTestClient();
 
-            var regions = JObject.Parse(await http.GetStringAsync("/_phantom/api/cost/regions"));
+            var regions = JObject.Parse(await http.GetStringAsync("/phantom/api/cost/regions"));
             Assert.Equal(14, ((JArray)regions["regions"]!).Count);
 
             var putSettings = await http.PutAsync(
-                "/_phantom/api/cost/settings",
+                "/phantom/api/cost/settings",
                 new StringContent("{\"Region\":\"japan-east\",\"LogQueryCost\":true}", Encoding.UTF8, "application/json"));
             Assert.Equal(HttpStatusCode.OK, putSettings.StatusCode);
 
             var container = app.Services.GetRequiredService<Container>();
             await container.CreateItemAsync(new { id = "p1", categoria = "tech", nome = "Mouse" }, new PartitionKey("tech"));
 
-            var logsJson = JObject.Parse(await http.GetStringAsync("/_phantom/api/logs"));
+            var logsJson = JObject.Parse(await http.GetStringAsync("/phantom/api/logs"));
             var logs = (JArray)logsJson["items"]!;
             Assert.Contains(logs, l => l["regionId"]?.ToString() == "japan-east" && l["estimatedCostUsd"]?.Value<double>() > 0);
 
             var simResp = await http.PostAsync(
-                "/_phantom/api/cost/simulate",
+                "/phantom/api/cost/simulate",
                 new StringContent("{\"region\":\"brazil-south\",\"totalItemsInContainer\":50000,\"returnedItemsCount\":100,\"queriesPerMonth\":1000000,\"storageGb\":10}", Encoding.UTF8, "application/json"));
             Assert.Equal(HttpStatusCode.OK, simResp.StatusCode);
             var simJson = JObject.Parse(await simResp.Content.ReadAsStringAsync());

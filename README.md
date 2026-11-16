@@ -15,7 +15,7 @@
 - **Troca transparente via Connection String (`AddCosmosDb`):** usa o `CosmosClient` real da Microsoft em produção e ativa o emulador em memória quando `ConnectionStrings:CosmosDb` aponta para o Phantom (`https://phantom.local/` ou `phantom://in-memory`).
 - **Auto-Seeding automático (`IHostedService`):** lê `Resources/Seeds/*.json` e popula os containers antes da API receber requisições, sem chamadas extras no `Program.cs`.
 - **Chaos Engineering embutido e Live:** injeta latência, throttling (`429`, substatus `3200`) e erros HTTP (`503`, `408`, `400`, `401`, `403`, `409`, `412`, `413`), configurável por arquivo ou ao vivo pelo Dashboard.
-- **PhantomDB Dashboard (`/_phantom`):** interface gráfica Web embutida com Visão Geral, Data Explorer & Query Runner SQL, controle live de Chaos, Logs ao vivo e editor de `phantom.config.json`.
+- **PhantomDB Dashboard (`/phantom`):** interface gráfica Web embutida com Visão Geral, Data Explorer & Query Runner SQL, controle live de Chaos, Logs ao vivo e editor de `phantom.config.json`.
 - **Motor de Alta Fidelidade (`Phantom.CosmosDB.Core`):** parser SQL completo, `ORDER BY`, `ComputedProperties`, `CompositeIndexes`, `MultiHash` (até 3 níveis), `UniqueKeys`, `IndexingMode.None` + `EnableScanInQuery`, `TransactionalBatch`, `Bulk`, `ChangeFeed` (`Incremental` e `AllVersionsAndDeletes`), `TTL` e `Sprocs`/`Triggers`/`UDFs`.
 
 ---
@@ -25,7 +25,7 @@
 1. **`Phantom.CosmosDB.Core`:** Motor em memória (`InMemoryCosmosClient`, `InMemoryContainer`, `FakeCosmosHandler`, gateway HTTP compatível com o SDK oficial `Microsoft.Azure.Cosmos`).
 2. **`Phantom.CosmosDB.JsTriggers`:** Engine JavaScript (Jint) para Stored Procedures, Triggers e UDFs.
 3. **`Phantom.CosmosDB.ProductionExtensions`:** Extensões auxiliares para interceptação de iteradores em testes.
-4. **`Phantom.CosmosDB`:** Pacote NuGet principal com ativação por Connection String (Strategy Pattern), `phantom.config.json`, Auto-Seeding (`IHostedService`), Chaos Engineering e **PhantomDB Dashboard** (`/_phantom`).
+4. **`Phantom.CosmosDB`:** Pacote NuGet principal com ativação por Connection String (Strategy Pattern), `phantom.config.json`, Auto-Seeding (`IHostedService`), Chaos Engineering e **PhantomDB Dashboard** (`/phantom`).
 
 ---
 
@@ -57,7 +57,7 @@ builder.AddCosmosDb();
 
 var app = builder.Build();
 
-// Opcional: habilita a UI Web em /_phantom (desativado automaticamente em Production ou modo real)
+// Opcional: habilita a UI Web em /phantom (desativado automaticamente em Production ou modo real)
 app.UsePhantomDashboard();
 
 app.Run();
@@ -184,9 +184,9 @@ projeto-x/
 
 ---
 
-## 5. PhantomDB Dashboard (`/_phantom`)
+## 5. PhantomDB Dashboard (`/phantom`)
 
-Com `app.UsePhantomDashboard();` no `Program.cs`, acesse `http://localhost:<porta>/_phantom` em `Development` para:
+Com `app.UsePhantomDashboard();` no `Program.cs`, acesse `http://localhost:<porta>/phantom` em `Development` para:
 - **Visão Geral:** listar banco, containers, contagem de itens, `RU/s` e políticas, além de **Reset & Re-seed** em 1 clique.
 - **Data Explorer & SQL:** executar queries SQL em memória, inspecionar JSON, criar/atualizar ou excluir itens.
 - **Chaos Engineering (Live):** ativar/desativar falhas HTTP, throttling e latência em tempo real sem reiniciar a API.

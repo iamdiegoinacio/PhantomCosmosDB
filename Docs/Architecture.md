@@ -23,7 +23,7 @@ flowchart TD
         Chaos["ChaosEngineeringConfigurator"]
         Telemetry["CosmosPhantomTelemetryHandler"]
         Registry["CosmosPhantomRuntimeRegistry"]
-        Dashboard["PhantomDB Dashboard (/_phantom)"]
+        Dashboard["PhantomDB Dashboard (/phantom)"]
     end
 
     subgraph CoreEngine ["Phantom.CosmosDB.Core"]
@@ -94,7 +94,7 @@ sequenceDiagram
     participant Tel as CosmosPhantomTelemetryHandler
     participant Chaos as ChaosEngineeringConfigurator
     participant InMem as InMemoryContainer
-    participant UI as PhantomDB Dashboard (/_phantom)
+    participant UI as PhantomDB Dashboard (/phantom)
 
     Repo->>SDK: ReadItemAsync / Query / CreateItemAsync
     SDK->>Tel: HttpRequestMessage
@@ -112,6 +112,6 @@ sequenceDiagram
     Tel-->>SDK: HttpResponseMessage
     SDK-->>Repo: Resultado ou CosmosException
 
-    UI->>Tel: GET /_phantom/api/logs (live)
-    UI->>Chaos: PUT /_phantom/api/chaos (altera ChaosConfig em runtime)
+    UI->>Tel: GET /phantom/api/logs (live)
+    UI->>Chaos: PUT /phantom/api/chaos (altera ChaosConfig em runtime)
 ```
