@@ -1,0 +1,49 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <PackageId>Phantom.CosmosDB</PackageId>
+    <Version>1.0.0</Version>
+    <Authors>Diego Silva</Authors>
+    <Description>Cosmos DB In-Memory Emulator para desenvolvimento local e testes com Auto-Seeding, CosmosPhantom.config.json e Chaos Engineering integrado.</Description>
+    <RepositoryUrl>https://github.com/iamdiegoinacio/CosmosPhantom</RepositoryUrl>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+    <TargetsForTfmSpecificBuildOutput>$(TargetsForTfmSpecificBuildOutput);CopyProjectReferencesToPackage</TargetsForTfmSpecificBuildOutput>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Phantom.CosmosDB.Tests" />
+    <None Include="..\..\README.md" Pack="true" PackagePath="\" />
+    <EmbeddedResource Include="Resources\**\*" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Jint" Version="4.2.1" />
+    <PackageReference Include="Microsoft.Azure.Cosmos" Version="$(CosmosSDKVersion)" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" Version="10.0.10" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.10" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.10" />
+    <PackageReference Include="Microsoft.Extensions.Options.DataAnnotations" Version="10.0.10" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
+    <PackageReference Include="NSubstitute" Version="5.3.0" />
+    <PackageReference Include="Superpower" Version="3.1.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Phantom.CosmosDB.Core\Phantom.CosmosDB.Core.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\Phantom.CosmosDB.JsTriggers\Phantom.CosmosDB.JsTriggers.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\Phantom.CosmosDB.ProductionExtensions\Phantom.CosmosDB.ProductionExtensions.csproj" PrivateAssets="all" />
+  </ItemGroup>
+
+  <Target Name="CopyProjectReferencesToPackage" DependsOnTargets="ResolveReferences">
+    <ItemGroup>
+      <BuildOutputInPackage Include="@(ReferenceCopyLocalPaths-&gt;WithMetadataValue('ReferenceSourceTarget', 'ProjectReference'))" />
+    </ItemGroup>
+  </Target>
+
+</Project>

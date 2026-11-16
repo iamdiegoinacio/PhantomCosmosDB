@@ -1,0 +1,623 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PhantomDB Dashboard</title>
+  <style>
+    :root {
+      --bg: #0b1020;
+      --surface: #131b31;
+      --surface-2: #1a2442;
+      --border: #27355d;
+      --text: #e6ecff;
+      --muted: #93a3c8;
+      --accent: #6c8cff;
+      --accent-2: #22d3ee;
+      --ok: #22c55e;
+      --warn: #f59e0b;
+      --err: #ef4444;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      --sans: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; font-family: var(--sans); background: var(--bg); color: var(--text);
+      display: flex; flex-direction: column; min-height: 100vh;
+    }
+    header {
+      background: var(--surface); border-bottom: 1px solid var(--border);
+      padding: 14px 24px; display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap;
+    }
+    .brand { display: flex; align-items: center; gap: 12px; }
+    .brand-badge {
+      width: 34px; height: 34px; border-radius: 9px; display: grid; place-items: center;
+      background: linear-gradient(135deg, var(--accent), var(--accent-2)); font-weight: 800; color: #071021;
+    }
+    .brand h1 { margin: 0; font-size: 18px; letter-spacing: .2px; }
+    .brand small { color: var(--muted); font-size: 12px; display: block; }
+    .header-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .pill {
+      padding: 5px 10px; border-radius: 999px; font-size: 12px; font-weight: 600;
+      background: var(--surface-2); border: 1px solid var(--border); color: var(--muted);
+    }
+    .pill.ok { color: var(--ok); border-color: rgba(34,197,94,.4); }
+    .pill.chaos { color: var(--warn); border-color: rgba(245,158,11,.5); background: rgba(245,158,11,.12); }
+    nav {
+      background: var(--surface); border-bottom: 1px solid var(--border);
+      padding: 0 24px; display: flex; gap: 6px; overflow-x: auto;
+    }
+    nav button {
+      background: transparent; border: none; color: var(--muted); padding: 12px 16px;
+      cursor: pointer; font-size: 14px; font-weight: 600; border-bottom: 2px solid transparent; white-space: nowrap;
+    }
+    nav button:hover { color: var(--text); }
+    nav button.active { color: var(--accent-2); border-bottom-color: var(--accent-2); }
+    main { padding: 24px; max-width: 1400px; width: 100%; margin: 0 auto; flex: 1; }
+    .tab { display: none; }
+    .tab.active { display: block; }
+    .grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+    .card {
+      background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 18px;
+    }
+    .card h3 { margin: 0 0 8px; font-size: 14px; color: var(--muted); font-weight: 600; }
+    .metric { font-size: 28px; font-weight: 700; }
+    .btn {
+      background: var(--accent); color: #071021; border: none; border-radius: 8px;
+      padding: 8px 14px; font-weight: 700; font-size: 13px; cursor: pointer;
+    }
+    .btn:hover { filter: brightness(1.08); }
+    .btn.secondary { background: var(--surface-2); color: var(--text); border: 1px solid var(--border); }
+    .btn.danger { background: rgba(239,68,68,.18); color: #fca5a5; border: 1px solid rgba(239,68,68,.4); }
+    .btn.sm { padding: 5px 10px; font-size: 12px; }
+    .row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+    .space-between { justify-content: space-between; }
+    .mt { margin-top: 16px; }
+    .tag {
+      display: inline-block; padding: 2px 8px; border-radius: 6px; font-size: 11px; font-family: var(--mono);
+      background: var(--surface-2); border: 1px solid var(--border); color: var(--accent-2); margin: 2px 4px 2px 0;
+    }
+    textarea, input[type="text"], input[type="number"], select {
+      background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 8px;
+      padding: 9px 12px; font-family: var(--mono); font-size: 13px;
+    }
+    textarea { width: 100%; resize: vertical; }
+    pre {
+      background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 12px;
+      overflow: auto; font-family: var(--mono); font-size: 12px; margin: 0; max-height: 460px;
+    }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+    th { color: var(--muted); font-weight: 600; font-size: 12px; text-transform: uppercase; }
+    .status-2xx { color: var(--ok); font-weight: 700; }
+    .status-4xx { color: var(--warn); font-weight: 700; }
+    .status-5xx { color: var(--err); font-weight: 700; }
+    .switch-card {
+      background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+      padding: 12px 14px; display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    }
+    .switch-card label { font-size: 13px; font-weight: 600; cursor: pointer; }
+    .switch-card small { display: block; font-size: 11px; color: var(--muted); }
+    input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--accent-2); cursor: pointer; }
+    #toast {
+      position: fixed; right: 20px; bottom: 20px; background: var(--surface-2); border: 1px solid var(--accent-2);
+      padding: 10px 16px; border-radius: 10px; font-size: 13px; display: none; z-index: 50;
+      box-shadow: 0 10px 30px rgba(0,0,0,.45);
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <div class="brand-badge">CP</div>
+      <div>
+        <h1>PhantomDB Dashboard</h1>
+        <small id="header-db">Conectando...</small>
+      </div>
+    </div>
+    <div class="header-actions">
+      <span class="pill ok">Emulador Ativo</span>
+      <span id="chaos-pill" class="pill">Chaos: Desligado</span>
+      <button class="btn secondary" onclick="refreshAll()">Atualizar</button>
+      <button class="btn" onclick="resetSeed()">Reset &amp; Re-seed</button>
+    </div>
+  </header>
+
+  <nav>
+    <button class="active" data-tab="overview" onclick="switchTab('overview', this)">Visão Geral</button>
+    <button data-tab="explorer" onclick="switchTab('explorer', this)">Data Explorer &amp; SQL</button>
+    <button data-tab="chaos" onclick="switchTab('chaos', this)">Chaos Engineering (Live)</button>
+    <button data-tab="logs" onclick="switchTab('logs', this)">Logs ao Vivo</button>
+    <button data-tab="config" onclick="switchTab('config', this)">CosmosPhantom.config.json</button>
+  </nav>
+
+  <main>
+    <!-- OVERVIEW -->
+    <section id="tab-overview" class="tab active">
+      <div class="grid">
+        <div class="card"><h3>Banco de Dados</h3><div class="metric" id="ov-db">-</div></div>
+        <div class="card"><h3>Containers</h3><div class="metric" id="ov-containers">0</div></div>
+        <div class="card"><h3>Total de Documentos</h3><div class="metric" id="ov-items">0</div></div>
+        <div class="card"><h3>Chaos Engineering</h3><div class="metric" id="ov-chaos">Off</div></div>
+      </div>
+      <div class="grid mt" id="containers-grid"></div>
+    </section>
+
+    <!-- DATA EXPLORER -->
+    <section id="tab-explorer" class="tab">
+      <div class="card">
+        <div class="row space-between">
+          <div class="row">
+            <label for="exp-container" style="font-weight:600">Container:</label>
+            <select id="exp-container" onchange="loadContainerItems()"></select>
+            <label class="row" style="font-size:13px; color:var(--muted)">
+              <input type="checkbox" id="exp-scan" checked /> EnableScanInQuery
+            </label>
+          </div>
+          <div class="row">
+            <span class="pill" id="exp-ru">RU: 0</span>
+            <button class="btn secondary" onclick="loadContainerItems()">Listar TOP 50</button>
+            <button class="btn" onclick="runQuery()">Executar SQL (Ctrl+Enter)</button>
+          </div>
+        </div>
+        <div class="mt">
+          <textarea id="exp-sql" rows="3">SELECT * FROM c</textarea>
+        </div>
+        <div id="exp-error" class="mt" style="color:#fca5a5; display:none; font-family:var(--mono); font-size:13px;"></div>
+      </div>
+
+      <div class="grid mt" style="grid-template-columns: 2fr 1fr;">
+        <div class="card">
+          <div class="row space-between">
+            <h3 style="margin:0">Resultados (<span id="exp-count">0</span>)</h3>
+          </div>
+          <div id="exp-results" class="mt" style="display:flex; flex-direction:column; gap:10px; max-height:520px; overflow:auto;"></div>
+        </div>
+        <div class="card">
+          <h3>Upsert Documento (JSON)</h3>
+          <textarea id="exp-upsert" rows="12" placeholder='{"id":"novo-1","categoria":"livros","nome":"Exemplo"}'></textarea>
+          <div class="row mt">
+            <button class="btn" onclick="upsertItem()">Salvar / Upsert</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- CHAOS ENGINEERING -->
+    <section id="tab-chaos" class="tab">
+      <div class="card">
+        <div class="row space-between">
+          <div>
+            <h3 style="margin:0; color:var(--text); font-size:16px;">Chaos Engineering em Tempo Real</h3>
+            <small style="color:var(--muted)">Alterações têm efeito imediato na API em memória sem precisar reiniciar.</small>
+          </div>
+          <div class="row">
+            <button class="btn secondary" onclick="disableAllChaos()">Desativar Tudo</button>
+            <button class="btn" onclick="applyChaos()">Aplicar Agora (Live)</button>
+          </div>
+        </div>
+
+        <div class="grid mt">
+          <div class="switch-card">
+            <div><label for="ch-EnableRandomThrottling">EnableRandomThrottling</label><small>Aplica probabilidade de falha</small></div>
+            <input type="checkbox" id="ch-EnableRandomThrottling" />
+          </div>
+          <div class="switch-card">
+            <div><label for="ch-ThrottlingProbability">ThrottlingProbability</label><small>0.0 a 1.0</small></div>
+            <input type="number" step="0.05" min="0" max="1" id="ch-ThrottlingProbability" style="width:90px" />
+          </div>
+          <div class="switch-card">
+            <div><label for="ch-SimulateHighLatency">SimulateHighLatency</label><small>Injeta atraso antes da resposta</small></div>
+            <input type="checkbox" id="ch-SimulateHighLatency" />
+          </div>
+          <div class="switch-card">
+            <div><label for="ch-MinLatencyMs">MinLatencyMs</label><small>Latência mínima (ms)</small></div>
+            <input type="number" min="0" id="ch-MinLatencyMs" style="width:90px" />
+          </div>
+          <div class="switch-card">
+            <div><label for="ch-MaxLatencyMs">MaxLatencyMs</label><small>Latência máxima (ms)</small></div>
+            <input type="number" min="0" id="ch-MaxLatencyMs" style="width:90px" />
+          </div>
+          <div class="switch-card">
+            <div><label for="ch-RetryAfterMs">RetryAfterMs</label><small>Header x-ms-retry-after-ms</small></div>
+            <input type="number" min="0" id="ch-RetryAfterMs" style="width:90px" />
+          </div>
+        </div>
+
+        <h3 class="mt">Simulações HTTP Cosmos DB</h3>
+        <div class="grid">
+          <div class="switch-card"><label for="ch-Simulate429_TooManyRequests">Simulate429_TooManyRequests (sub 3200)</label><input type="checkbox" id="ch-Simulate429_TooManyRequests" /></div>
+          <div class="switch-card"><label for="ch-Simulate503_ServiceUnavailable">Simulate503_ServiceUnavailable</label><input type="checkbox" id="ch-Simulate503_ServiceUnavailable" /></div>
+          <div class="switch-card"><label for="ch-Simulate408_RequestTimeout">Simulate408_RequestTimeout</label><input type="checkbox" id="ch-Simulate408_RequestTimeout" /></div>
+          <div class="switch-card"><label for="ch-Simulate403_Forbidden">Simulate403_Forbidden</label><input type="checkbox" id="ch-Simulate403_Forbidden" /></div>
+          <div class="switch-card"><label for="ch-Simulate401_Unauthorized">Simulate401_Unauthorized</label><input type="checkbox" id="ch-Simulate401_Unauthorized" /></div>
+          <div class="switch-card"><label for="ch-Simulate409_Conflict">Simulate409_Conflict</label><input type="checkbox" id="ch-Simulate409_Conflict" /></div>
+          <div class="switch-card"><label for="ch-Simulate413_EntityTooLarge">Simulate413_EntityTooLarge</label><input type="checkbox" id="ch-Simulate413_EntityTooLarge" /></div>
+          <div class="switch-card"><label for="ch-Simulate412_PreconditionFailed">Simulate412_PreconditionFailed</label><input type="checkbox" id="ch-Simulate412_PreconditionFailed" /></div>
+          <div class="switch-card"><label for="ch-Simulate400_BadRequest">Simulate400_BadRequest</label><input type="checkbox" id="ch-Simulate400_BadRequest" /></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- LOGS -->
+    <section id="tab-logs" class="tab">
+      <div class="card">
+        <div class="row space-between">
+          <div class="row">
+            <input type="text" id="log-filter" placeholder="Filtrar por path, container ou SQL..." style="width:280px" oninput="renderLogs()" />
+            <label class="row" style="font-size:13px; color:var(--muted)">
+              <input type="checkbox" id="log-auto" checked /> Auto-refresh (1.5s)
+            </label>
+          </div>
+          <div class="row">
+            <button class="btn secondary" onclick="loadLogs()">Atualizar</button>
+            <button class="btn danger" onclick="clearLogs()">Limpar Logs</button>
+          </div>
+        </div>
+        <div class="mt" style="overflow:auto; max-height:580px;">
+          <table>
+            <thead>
+              <tr>
+                <th>Hora (UTC)</th>
+                <th>Método</th>
+                <th>Status</th>
+                <th>Container</th>
+                <th>RU</th>
+                <th>Tempo</th>
+                <th>Path / SQL</th>
+              </tr>
+            </thead>
+            <tbody id="logs-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- CONFIG EDITOR -->
+    <section id="tab-config" class="tab">
+      <div class="card">
+        <div class="row space-between">
+          <div>
+            <h3 style="margin:0; color:var(--text); font-size:16px;">Editor de CosmosPhantom.config.json</h3>
+            <small id="cfg-path" style="color:var(--muted)"></small>
+          </div>
+          <div class="row">
+            <button class="btn secondary" onclick="formatConfigJson()">Formatar JSON</button>
+            <button class="btn" onclick="saveConfigJson()">Salvar no Disco</button>
+          </div>
+        </div>
+        <textarea id="cfg-editor" rows="22" class="mt"></textarea>
+      </div>
+    </section>
+  </main>
+
+  <div id="toast"></div>
+
+  <script>
+    const BASE = "__PHANTOM_BASE_PATH__";
+    let cachedLogs = [];
+    let overviewData = null;
+
+    function toast(msg) {
+      const el = document.getElementById("toast");
+      el.textContent = msg;
+      el.style.display = "block";
+      setTimeout(() => { el.style.display = "none"; }, 2600);
+    }
+
+    async function api(path, opts = {}) {
+      const res = await fetch(BASE + path, opts);
+      const text = await res.text();
+      let data = text;
+      try { data = JSON.parse(text); } catch {}
+      if (!res.ok) throw { status: res.status, data };
+      return data;
+    }
+
+    function switchTab(name, btn) {
+      document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
+      document.querySelectorAll("nav button").forEach(b => b.classList.remove("active"));
+      document.getElementById("tab-" + name).classList.add("active");
+      btn.classList.add("active");
+      if (name === "logs") loadLogs();
+      if (name === "config") loadConfig();
+      if (name === "chaos") loadChaos();
+    }
+
+    async function loadOverview() {
+      overviewData = await api("/api/overview");
+      document.getElementById("header-db").textContent = "Database: " + overviewData.databaseName;
+      document.getElementById("ov-db").textContent = overviewData.databaseName;
+      document.getElementById("ov-containers").textContent = overviewData.containerCount;
+      document.getElementById("ov-items").textContent = overviewData.totalItems;
+      document.getElementById("ov-chaos").textContent = overviewData.chaosActive ? "ATIVO" : "Off";
+
+      const chaosPill = document.getElementById("chaos-pill");
+      chaosPill.textContent = overviewData.chaosActive ? "Chaos: ATIVO" : "Chaos: Desligado";
+      chaosPill.className = overviewData.chaosActive ? "pill chaos" : "pill";
+
+      const grid = document.getElementById("containers-grid");
+      grid.innerHTML = "";
+      const select = document.getElementById("exp-container");
+      const current = select.value;
+      select.innerHTML = "";
+
+      for (const c of overviewData.containers) {
+        const opt = document.createElement("option");
+        opt.value = c.name;
+        opt.textContent = `${c.name} (${c.itemCount})`;
+        select.appendChild(opt);
+
+        const card = document.createElement("div");
+        card.className = "card";
+        card.innerHTML = `
+          <div class="row space-between">
+            <strong style="font-size:16px">${c.name}</strong>
+            <span class="pill">${c.itemCount} itens</span>
+          </div>
+          <div class="mt">
+            <span class="tag">PK: ${c.partitionKeyPaths.join(", ")}</span>
+            <span class="tag">${c.throughput} RU/s</span>
+            <span class="tag">Index: ${c.indexingMode}</span>
+            ${c.defaultTtl !== null && c.defaultTtl !== undefined ? `<span class="tag">TTL: ${c.defaultTtl}</span>` : ""}
+            ${c.compositeIndexCount > 0 ? `<span class="tag">Composite: ${c.compositeIndexCount}</span>` : ""}
+            ${c.uniqueKeys.length > 0 ? `<span class="tag">UniqueKeys: ${c.uniqueKeys.length}</span>` : ""}
+            ${c.computedProperties.length > 0 ? `<span class="tag">Computed: ${c.computedProperties.length}</span>` : ""}
+          </div>
+        `;
+        grid.appendChild(card);
+      }
+
+      if (current && overviewData.containers.some(c => c.name === current)) {
+        select.value = current;
+      }
+    }
+
+    async function loadContainerItems() {
+      const name = document.getElementById("exp-container").value;
+      if (!name) return;
+      document.getElementById("exp-sql").value = "SELECT TOP 50 * FROM c";
+      await runQuery();
+    }
+
+    async function runQuery() {
+      const name = document.getElementById("exp-container").value;
+      const sql = document.getElementById("exp-sql").value;
+      const enableScan = document.getElementById("exp-scan").checked;
+      const errBox = document.getElementById("exp-error");
+      errBox.style.display = "none";
+
+      try {
+        const res = await api(`/api/containers/${encodeURIComponent(name)}/query`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sql, enableScan })
+        });
+        document.getElementById("exp-count").textContent = res.count;
+        document.getElementById("exp-ru").textContent = `RU: ${res.totalRu}`;
+        renderQueryResults(name, res.items);
+      } catch (e) {
+        errBox.textContent = `Erro (${e.status}): ${e.data?.error || JSON.stringify(e.data)}`;
+        errBox.style.display = "block";
+      }
+    }
+
+    function renderQueryResults(containerName, items) {
+      const box = document.getElementById("exp-results");
+      box.innerHTML = "";
+      const cMeta = overviewData?.containers?.find(c => c.name === containerName);
+      const pkPaths = cMeta?.partitionKeyPaths || ["/id"];
+
+      for (const item of items) {
+        const wrap = document.createElement("div");
+        wrap.style.border = "1px solid var(--border)";
+        wrap.style.borderRadius = "8px";
+        wrap.style.padding = "10px";
+        wrap.style.background = "var(--bg)";
+
+        const header = document.createElement("div");
+        header.className = "row space-between";
+        header.style.marginBottom = "6px";
+        const idLabel = document.createElement("span");
+        idLabel.style.fontFamily = "var(--mono)";
+        idLabel.style.fontSize = "12px";
+        idLabel.style.color = "var(--accent-2)";
+        idLabel.textContent = item.id ? `id: ${item.id}` : "projeção";
+        header.appendChild(idLabel);
+
+        if (item.id) {
+          const delBtn = document.createElement("button");
+          delBtn.className = "btn danger sm";
+          delBtn.textContent = "Excluir";
+          delBtn.onclick = () => deleteItem(containerName, item, pkPaths);
+          header.appendChild(delBtn);
+        }
+
+        const pre = document.createElement("pre");
+        pre.textContent = JSON.stringify(item, null, 2);
+        wrap.appendChild(header);
+        wrap.appendChild(pre);
+        box.appendChild(wrap);
+      }
+    }
+
+    function extractPkParam(item, pkPaths) {
+      const resolvePath = (obj, path) => {
+        const parts = path.replace(/^\//, "").split("/");
+        let cur = obj;
+        for (const p of parts) {
+          if (cur == null) return null;
+          cur = cur[p];
+        }
+        return cur;
+      };
+      if (pkPaths.length > 1) {
+        return JSON.stringify(pkPaths.map(p => resolvePath(item, p)));
+      }
+      return resolvePath(item, pkPaths[0]) ?? item.id;
+    }
+
+    async function deleteItem(containerName, item, pkPaths) {
+      const pk = extractPkParam(item, pkPaths);
+      await api(`/api/containers/${encodeURIComponent(containerName)}/items/${encodeURIComponent(item.id)}?pk=${encodeURIComponent(pk)}`, {
+        method: "DELETE"
+      });
+      toast(`Item '${item.id}' removido.`);
+      await refreshAll();
+    }
+
+    async function upsertItem() {
+      const name = document.getElementById("exp-container").value;
+      const raw = document.getElementById("exp-upsert").value;
+      try {
+        JSON.parse(raw);
+        await api(`/api/containers/${encodeURIComponent(name)}/items`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: raw
+        });
+        toast("Item salvo com sucesso.");
+        await refreshAll();
+      } catch (e) {
+        toast("Erro no JSON/Upsert: " + (e.data?.error || e.message));
+      }
+    }
+
+    const chaosBoolFields = [
+      "EnableRandomThrottling", "SimulateHighLatency",
+      "Simulate429_TooManyRequests", "Simulate503_ServiceUnavailable",
+      "Simulate408_RequestTimeout", "Simulate403_Forbidden",
+      "Simulate401_Unauthorized", "Simulate409_Conflict",
+      "Simulate413_EntityTooLarge", "Simulate412_PreconditionFailed",
+      "Simulate400_BadRequest"
+    ];
+    const chaosNumFields = ["ThrottlingProbability", "MinLatencyMs", "MaxLatencyMs", "RetryAfterMs"];
+
+    async function loadChaos() {
+      const cfg = await api("/api/chaos");
+      for (const f of chaosBoolFields) {
+        const el = document.getElementById("ch-" + f);
+        if (el) el.checked = !!cfg[f];
+      }
+      for (const f of chaosNumFields) {
+        const el = document.getElementById("ch-" + f);
+        if (el) el.value = cfg[f] ?? 0;
+      }
+    }
+
+    async function applyChaos() {
+      const payload = {};
+      for (const f of chaosBoolFields) payload[f] = document.getElementById("ch-" + f).checked;
+      for (const f of chaosNumFields) payload[f] = Number(document.getElementById("ch-" + f).value);
+      await api("/api/chaos", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      toast("Chaos Engineering atualizado em memória!");
+      await loadOverview();
+    }
+
+    async function disableAllChaos() {
+      for (const f of chaosBoolFields) document.getElementById("ch-" + f).checked = false;
+      await applyChaos();
+    }
+
+    async function loadLogs() {
+      const res = await api("/api/logs?take=200");
+      cachedLogs = res.items || [];
+      renderLogs();
+    }
+
+    function renderLogs() {
+      const q = (document.getElementById("log-filter").value || "").toLowerCase();
+      const tbody = document.getElementById("logs-body");
+      tbody.innerHTML = "";
+      for (const entry of cachedLogs) {
+        const text = `${entry.method} ${entry.path} ${entry.containerName || ""} ${entry.sqlQuery || ""} ${entry.statusCode}`.toLowerCase();
+        if (q && !text.includes(q)) continue;
+        const scClass = entry.statusCode >= 500 ? "status-5xx" : entry.statusCode >= 400 ? "status-4xx" : "status-2xx";
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td style="font-family:var(--mono); font-size:12px">${new Date(entry.timestampUtc).toISOString().substring(11, 23)}</td>
+          <td><span class="tag">${entry.method}</span></td>
+          <td class="${scClass}">${entry.statusCode}${entry.subStatusCode ? ` (${entry.subStatusCode})` : ""} ${entry.isChaosInjected ? '<span class="pill chaos">CHAOS</span>' : ''}</td>
+          <td>${entry.containerName || "-"}</td>
+          <td style="font-family:var(--mono)">${entry.requestCharge}</td>
+          <td style="font-family:var(--mono)">${entry.durationMs}ms</td>
+          <td style="font-family:var(--mono); font-size:12px">${entry.path}${entry.sqlQuery ? `<div style="color:var(--accent-2); margin-top:4px">${entry.sqlQuery}</div>` : ""}</td>
+        `;
+        tbody.appendChild(tr);
+      }
+    }
+
+    async function clearLogs() {
+      await api("/api/logs", { method: "DELETE" });
+      cachedLogs = [];
+      renderLogs();
+      toast("Logs limpos.");
+    }
+
+    async function loadConfig() {
+      const res = await api("/api/config");
+      document.getElementById("cfg-path").textContent = res.path + (res.exists ? "" : " (será criado ao salvar)");
+      document.getElementById("cfg-editor").value = res.json;
+    }
+
+    function formatConfigJson() {
+      const ed = document.getElementById("cfg-editor");
+      try {
+        ed.value = JSON.stringify(JSON.parse(ed.value), null, 2);
+      } catch (e) {
+        toast("JSON inválido: " + e.message);
+      }
+    }
+
+    async function saveConfigJson() {
+      const json = document.getElementById("cfg-editor").value;
+      try {
+        JSON.parse(json);
+        const res = await api("/api/config", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ json })
+        });
+        toast("Salvo em: " + res.path);
+        await loadChaos();
+        await loadOverview();
+      } catch (e) {
+        toast("Erro ao salvar: " + (e.data?.error || e.message));
+      }
+    }
+
+    async function resetSeed() {
+      await api("/api/seed/reset", { method: "POST" });
+      toast("Containers limpos e re-populados!");
+      await refreshAll();
+    }
+
+    async function refreshAll() {
+      await loadOverview();
+      await runQuery();
+      await loadChaos();
+    }
+
+    document.getElementById("exp-sql").addEventListener("keydown", e => {
+      if (e.ctrlKey && e.key === "Enter") runQuery();
+    });
+
+    setInterval(() => {
+      if (document.getElementById("tab-logs").classList.contains("active") &&
+          document.getElementById("log-auto").checked) {
+        loadLogs();
+      }
+    }, 1500);
+
+    (async () => {
+      await refreshAll();
+      await loadLogs();
+      await loadConfig();
+    })();
+  </script>
+</body>
+</html>
