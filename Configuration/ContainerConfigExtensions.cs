@@ -1,6 +1,7 @@
 ﻿using Microsoft.Azure.Cosmos;
 using System.Collections.ObjectModel;
 using System;
+using System.Collections.Generic;
 
 namespace Cosmos.Phantom.SDK.Configuration;
 
@@ -44,4 +45,21 @@ public static class ContainerConfigExtensions
 
         return containerProperties;
     }
+
+    /// <summary>
+    /// Retorna os caminhos efetivos de partition key (PartitionKeyPaths tem precedência; máximo 3 para MultiHash).
+    /// </summary>
+    public static IReadOnlyList<string> GetPartitionKeyPaths(this ContainerConfig containerConfig)
+    {
+        var paths = containerConfig.PartitionKeyPaths is { Count: > 0 }
+            ? containerConfig.PartitionKeyPaths
+            : [containerConfig.PartitionKeyPath];
+
+        if (paths.Count > 3)
+            throw new Cosmos.Phantom.SDK.Exceptions.CosmosDbEmulatorConfigurationException(
+                $"O container '{containerConfig.Name}' define {paths.Count} PartitionKeyPaths; o máximo permitido (MultiHash) é 3.");
+
+        return paths;
+    }
 }
+
