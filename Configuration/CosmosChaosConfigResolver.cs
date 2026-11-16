@@ -8,52 +8,48 @@ namespace Cosmos.Phantom.SDK.Configuration;
 
 internal static class CosmosChaosConfigResolver
 {
+    private const string ChaosSettingsFileName = "Chaos.Settings.json";
+
     /// <summary>
-    /// Lê a configuração providenciada pelo consumidor e realiza o fallback/merge 
-    /// com a configuração padrão de caos embutida no SDK.
+    /// Lê a configuração de Chaos a partir de <c>CosmosPhantom.config.json</c>, <c>Resources/Chaos.Settings.json</c>
+    /// ou <see cref="IConfiguration"/>. Por padrão nenhuma simulação de erro é habilitada.
     /// </summary>
-    public static ChaosConfig? Resolve(IConfiguration configuration)
+    public static ChaosConfig Resolve(IConfiguration configuration, string? contentRootPath = null)
     {
-        var chaosConfig = configuration.GetSection("CosmosChaosEngineering").Get<ChaosConfig>();
-        var fallbackConfig = LoadEmbeddedConfig();
+        var chaosConfig =
+            LoadFromRootConfig(contentRootPath)
+            ?? LoadFromResourcesSettings(contentRootPath)
+            ?? configuration.GetSection("CosmosChaosEngineering").Get<ChaosConfig>()
+            ?? configuration.GetSection("CosmosDbEmulator:Chaos").Get<ChaosConfig>();
 
-        if (chaosConfig == null)
-        {
-            chaosConfig = fallbackConfig;
-        }
-        else if (fallbackConfig != null)
-        {
-            // Mescla de configurações: se o usuário preencheu o section mas não definiu tudo
-            // Poderíamos fazer um merge detalhado aqui se houvesse propriedades complexas aninhadas,
-            // mas como o ChaosConfig são apenas booleanos e doubles primitivos, 
-            // e tipos primitivos têm valor default (false/0.0), é difícil saber se o usuário
-            // os declarou explicitamente como false ou se foram omitidos.
-            // Para simplificar, consideramos que se ele criou a sessão "CosmosChaosEngineering",
-            // ele está assumindo o controle total. Caso contrário, usamos o fallback.
-        }
-
-        return chaosConfig;
+        return chaosConfig ?? new ChaosConfig();
     }
 
-    private static ChaosConfig? LoadEmbeddedConfig()
+    private static ChaosConfig? LoadFromRootConfig(string? contentRootPath)
     {
+        var rootJson = PhantomRootConfigResolver.LoadRootConfigJson(contentRootPath);
+        if (rootJson == null) return null;
+
+        var section = rootJson["CosmosChaosEngineering"]
+                      ?? rootJson["Chaos"]
+                      ?? rootJson["CosmosDbEmulator"]?["Chaos"];
+        return section?.ToObject<ChaosConfig>();
+    }
+
+    private static ChaosConfig? LoadFromResourcesSettings(string? contentRootPath)
+    {
+        var path = PhantomResourcePathResolver.ResolveResourceFile(contentRootPath, ChaosSettingsFileName);
+        if (path == null) return null;
+
         try
         {
-            var assembly = Assembly.GetExecutingAssembly();
-            var resourceName = "Cosmos.Phantom.SDK.Resources.Chaos.Settings.json";
-            
-            using var stream = assembly.GetManifestResourceStream(resourceName);
-            if (stream == null) return null;
-
-            using var reader = new StreamReader(stream);
-            var json = reader.ReadToEnd();
-            var jObj = JObject.Parse(json);
-            
-            return jObj["CosmosChaosEngineering"]?.ToObject<ChaosConfig>();
+            var jObj = JObject.Parse(File.ReadAllText(path));
+            var section = jObj["CosmosChaosEngineering"] ?? jObj["Chaos"];
+            return section?.ToObject<ChaosConfig>();
         }
         catch
         {
-            return null; // Falha segura se o embedded resource não for encontrado
+            return null;
         }
     }
 }

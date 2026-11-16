@@ -23,15 +23,15 @@ public static class PhantomCosmosExtensions
         IHostEnvironment environment,
         IConfiguration configuration)
     {
-        // Fail-Fast Silencioso: Se não for dev ou a flag estiver desligada, ignora o SDK.
-        if (!environment.IsDevelopment() || !configuration.GetValue<bool>("UseCosmosPhantom"))
+        // Fail-Fast Silencioso: Se não for dev ou UseCosmosPhantom não estiver explicitamente true, ignora o SDK.
+        if (!environment.IsDevelopment() || !PhantomRootConfigResolver.IsCosmosPhantomEnabled(configuration, environment.ContentRootPath))
         {
             return services;
         }
 
-        // 1. Resolve configurações (Usuário vs Embutido)
-        var emulatorConfig = CosmosEmulatorConfigResolver.Resolve(configuration);
-        var chaosConfig = CosmosChaosConfigResolver.Resolve(configuration);
+        // 1. Resolve configurações (CosmosPhantom.config.json -> Resources/ -> IConfiguration -> Fallback)
+        var emulatorConfig = CosmosEmulatorConfigResolver.Resolve(configuration, environment.ContentRootPath);
+        var chaosConfig = CosmosChaosConfigResolver.Resolve(configuration, environment.ContentRootPath);
         if (emulatorConfig == null) return services;
 
         // 2. Configura e valida as Options
