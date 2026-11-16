@@ -68,13 +68,14 @@ internal class InMemoryContainer : Container, IContainerTestSetup
     private readonly InMemoryItemStore _store = new();
     private readonly InMemoryChangeFeedLog _changeFeedLog = new();
     private readonly ScriptCatalog _scriptCatalog = new();
+    private readonly ContainerPersistenceService _persistence = new();
+    private readonly ComputedPropertyCompiler _computedProperties = new();
     private readonly Scripts _scripts;
 
     internal int _throughput = 400;
     internal bool _isDeleted;
 
     private ContainerProperties _containerProperties;
-    private volatile (string Name, string FromAlias, SqlExpression? Expr)[]? _parsedComputedProperties;
     private Database? _cachedDatabase;
     private string? _parentDatabaseId;
     private int? _defaultTimeToLive;
@@ -213,7 +214,7 @@ internal class InMemoryContainer : Container, IContainerTestSetup
 
     internal ContainerProperties ContainerPropertiesInternal => _containerProperties;
 
-    internal void ResetComputedPropertiesCache() => _parsedComputedProperties = null;
+    internal void ResetComputedPropertiesCache() => _computedProperties.Reset();
 
     /// <summary>The partition key path(s) for this container.</summary>
     public IReadOnlyList<string> PartitionKeyPaths { get; }
@@ -283,16 +284,7 @@ internal class InMemoryContainer : Container, IContainerTestSetup
     /// Saves the current container state to the file specified by <see cref="StateFilePath"/>.
     /// Does nothing if <see cref="StateFilePath"/> is null. Creates the directory if it does not exist.
     /// </summary>
-    public void Dispose()
-    {
-        if (StateFilePath is not null)
-        {
-            var dir = Path.GetDirectoryName(StateFilePath);
-            if (!string.IsNullOrEmpty(dir))
-                Directory.CreateDirectory(dir);
-            ExportStateToFile(StateFilePath);
-        }
-    }
+    public void Dispose() => _persistence.SaveOnDispose(StateFilePath, ExportState);
 
     /// <summary>
     /// Loads container state from the file specified by <see cref="StateFilePath"/>.
@@ -300,39 +292,16 @@ internal class InMemoryContainer : Container, IContainerTestSetup
     /// If the file exists, its contents are imported via <see cref="ImportState"/>.
     /// </summary>
     /// <exception cref="InvalidOperationException">Thrown when <see cref="StateFilePath"/> is null.</exception>
-    public void LoadPersistedState()
-    {
-        if (StateFilePath is null)
-            throw new InvalidOperationException("StateFilePath must be set before calling LoadPersistedState().");
-
-        if (File.Exists(StateFilePath))
-            ImportStateFromFile(StateFilePath);
-    }
+    public void LoadPersistedState() => _persistence.LoadPersistedState(StateFilePath, ImportState);
 
     // ─── State persistence & Point-in-time restore ────────────────────────────
 
     /// <summary>Exports the current container state as a JSON string.</summary>
-    public string ExportState()
-        => ContainerStateSerializer.ExportState(
-            _store.GetOrderedKeysSnapshot(),
-            _store.Items,
-            key => _store.IsExpired(key, DefaultTimeToLive));
+    public string ExportState() => _persistence.ExportState(_store, DefaultTimeToLive);
 
     /// <summary>Imports container state from a JSON string, replacing all existing data.</summary>
     public void ImportState(string json)
-        => ContainerStateSerializer.ImportState(
-            json,
-            ClearItems,
-            jObj => PartitionKeyProcessor.ExtractPartitionKeyValue(null, jObj, PartitionKeyPaths),
-            (jObj, pk) => UniqueKeyValidator.ValidateUniqueKeys(_containerProperties.UniqueKeyPolicy, _store.Items, jObj, pk),
-            (docJson, etag, ts) => InMemoryItemStore.EnrichWithSystemProperties(Id, docJson, etag, ts),
-            (key, enriched, etag, now) =>
-            {
-                _store.Etags[key] = etag;
-                _store.Timestamps[key] = now;
-                _store.Items[key] = enriched;
-                _store.AddInsertionOrder(key);
-            });
+        => _persistence.ImportState(json, Id, _store, PartitionKeyPaths, _containerProperties.UniqueKeyPolicy, ClearItems);
 
     /// <summary>Exports the current container state to a file.</summary>
     public void ExportStateToFile(string filePath) => File.WriteAllText(filePath, ExportState());
@@ -345,28 +314,7 @@ internal class InMemoryContainer : Container, IContainerTestSetup
     /// the change feed. All current data is replaced with the reconstructed state.
     /// </summary>
     public void RestoreToPointInTime(DateTimeOffset pointInTime)
-        => ContainerStateSerializer.RestoreToPointInTime(
-            pointInTime,
-            _changeFeedLog,
-            () => _store.Clear(includeLocks: true),
-            (docJson, etag, ts) => InMemoryItemStore.EnrichWithSystemProperties(Id, docJson, etag, ts),
-            (key, enriched, etag, ts) =>
-            {
-                _store.Items[key] = enriched;
-                _store.Etags[key] = etag;
-                _store.Timestamps[key] = ts;
-            },
-            insertionOrderKeys =>
-            {
-                lock (_store.InsertionOrderLock)
-                {
-                    foreach (var key in insertionOrderKeys)
-                    {
-                        if (_store.Items.ContainsKey(key))
-                            _store.InsertionOrder.Add(key);
-                    }
-                }
-            });
+        => _persistence.RestoreToPointInTime(pointInTime, Id, _store, _changeFeedLog);
 
     // ─── Script & Trigger Registrations ───────────────────────────────────────
 
@@ -798,11 +746,7 @@ internal class InMemoryContainer : Container, IContainerTestSetup
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        _isDeleted = true;
-        _store.Clear();
-        _changeFeedLog.Clear();
-        _scriptCatalog.Clear();
-        OnDeleted?.Invoke();
+        MarkDeleted();
         return Task.FromResult(CosmosResponseFactory.CreateContainerResponse(this, null, HttpStatusCode.NoContent));
     }
 
@@ -811,12 +755,17 @@ internal class InMemoryContainer : Container, IContainerTestSetup
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        MarkDeleted();
+        return Task.FromResult(CreateResponseMessage(HttpStatusCode.NoContent));
+    }
+
+    private void MarkDeleted()
+    {
         _isDeleted = true;
         _store.Clear();
         _changeFeedLog.Clear();
         _scriptCatalog.Clear();
         OnDeleted?.Invoke();
-        return Task.FromResult(CreateResponseMessage(HttpStatusCode.NoContent));
     }
 
     public override Task<int?> ReadThroughputAsync(CancellationToken cancellationToken = default)
@@ -922,36 +871,6 @@ internal class InMemoryContainer : Container, IContainerTestSetup
             ScriptCatalog.UdfPlaceholder,
             geospatialType: _containerProperties.GeospatialConfig?.GeospatialType ?? GeospatialType.Geography);
 
-    private (string Name, string FromAlias, SqlExpression? Expr)[] GetParsedComputedProperties()
-    {
-        var cached = _parsedComputedProperties;
-        if (cached is not null) return cached;
-
-        var cps = _containerProperties.ComputedProperties;
-        if (cps is null or { Count: 0 })
-        {
-            _parsedComputedProperties = Array.Empty<(string, string, SqlExpression?)>();
-            return _parsedComputedProperties;
-        }
-
-        var result = new (string Name, string FromAlias, SqlExpression? Expr)[cps.Count];
-        for (var i = 0; i < cps.Count; i++)
-        {
-            var parsed = CosmosSqlParser.Parse(cps[i].Query);
-            if (parsed.IsValueSelect && parsed.SelectFields.Length == 1 && parsed.SelectFields[0].SqlExpr is not null)
-            {
-                result[i] = (cps[i].Name, parsed.FromAlias, parsed.SelectFields[0].SqlExpr);
-            }
-            else
-            {
-                result[i] = (cps[i].Name, parsed.FromAlias, null);
-            }
-        }
-
-        _parsedComputedProperties = result;
-        return result;
-    }
-
     private List<string> FilterItemsByQuery(
         string queryText,
         IDictionary<string, object?> parameters,
@@ -964,7 +883,7 @@ internal class InMemoryContainer : Container, IContainerTestSetup
             queryText,
             items,
             context,
-            GetParsedComputedProperties(),
+            _computedProperties.GetCompiled(_containerProperties),
             _containerProperties.IndexingPolicy,
             requestOptions?.EnableScanInQuery ?? false);
     }
