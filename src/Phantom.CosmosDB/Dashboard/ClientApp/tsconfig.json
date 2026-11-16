@@ -6,7 +6,11 @@
     "noImplicitAny": true,
     "outFile": "../../Resources/Dashboard/app.js",
     "removeComments": false,
-    "lib": ["ES2020", "DOM", "DOM.Iterable"]
+    "lib": [
+      "ES2020",
+      "DOM",
+      "DOM.Iterable"
+    ]
   },
   "files": [
     "src/domain/models.ts",
