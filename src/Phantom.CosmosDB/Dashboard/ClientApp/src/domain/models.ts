@@ -100,4 +100,36 @@ namespace PhantomDashboard.Domain {
     baselineProvisioned: MonthlyCostEstimate;
     warnings: string[];
   }
+
+  export interface SeedSummary {
+    containerName: string;
+    filePath: string;
+    exists: boolean;
+    fileBytes: number;
+    seedItemCount: number;
+    inMemoryCount: number;
+  }
+
+  export interface ContainerSeedResponse {
+    containerName: string;
+    filePath: string;
+    exists: boolean;
+    totalCount: number;
+    items: Record<string, unknown>[];
+    suggestedTemplate: Record<string, unknown>;
+  }
+
+  export interface SeedGenerationJobStatus {
+    jobId: string;
+    containerName: string;
+    totalCount: number;
+    processedCount: number;
+    persistedCount: number;
+    status: string;
+    error?: string | null;
+    savedFilePath?: string | null;
+    percent: number;
+    elapsedSeconds: number;
+    itemsPerSecond: number;
+  }
 }

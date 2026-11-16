@@ -518,6 +518,147 @@ var PhantomDashboard;
     (function (Features) {
         var byId = PhantomDashboard.Infrastructure.byId;
         var toast = PhantomDashboard.Infrastructure.toast;
+        class SeedsController {
+            constructor(api, onCompleted) {
+                this.api = api;
+                this.onCompleted = onCompleted;
+                this.activeJobId = null;
+                this.pollTimer = null;
+            }
+            async loadSummary() {
+                const res = await this.api.get("/api/seeds");
+                const sel = byId("seed-container");
+                const prev = sel.value;
+                sel.innerHTML = "";
+                for (const s of res.items) {
+                    const opt = document.createElement("option");
+                    opt.value = s.containerName;
+                    opt.textContent = `${s.containerName} (disco: ${s.seedItemCount} | memória: ${s.inMemoryCount})`;
+                    sel.appendChild(opt);
+                }
+                if (prev && res.items.some(i => i.containerName === prev)) {
+                    sel.value = prev;
+                }
+                await this.loadSelectedContainer();
+            }
+            async loadSelectedContainer() {
+                const name = byId("seed-container").value;
+                if (!name)
+                    return;
+                const data = await this.api.get(`/api/seeds/${encodeURIComponent(name)}?take=25&skip=0`);
+                byId("seed-file-info").textContent =
+                    `${data.filePath} (${data.exists ? `${data.totalCount} itens gravados` : "arquivo ainda não existe"})`;
+                byId("seed-template").value = JSON.stringify(data.suggestedTemplate, null, 2);
+                byId("seed-preview-count").textContent = String(data.items.length);
+                byId("seed-stored-list").innerHTML = data.items.length === 0
+                    ? `<span class="muted-hint">Nenhuma seed gravada para este container.</span>`
+                    : data.items.map(item => `<pre style="margin-bottom:8px">${JSON.stringify(item, null, 2)}</pre>`).join("");
+            }
+            onIdStrategyChanged() {
+                const strategy = byId("seed-id-strategy").value;
+                byId("seed-prefix-group").style.display =
+                    strategy === "Auto" || strategy === "PrefixSequential" ? "flex" : "none";
+                byId("seed-v5-group").style.display = strategy === "GuidV5" ? "grid" : "none";
+            }
+            setVolumePreset(count) {
+                byId("seed-count").value = String(count);
+            }
+            async previewGeneration() {
+                const name = byId("seed-container").value;
+                if (!name)
+                    return;
+                try {
+                    const payload = this.buildPayload(5);
+                    const res = await this.api.post(`/api/seeds/${encodeURIComponent(name)}/preview`, payload);
+                    byId("seed-generated-preview").innerHTML =
+                        res.items.map(item => `<pre style="margin-bottom:8px">${JSON.stringify(item, null, 2)}</pre>`).join("");
+                    toast("Prévia de 5 itens gerada!");
+                }
+                catch (e) {
+                    const err = e;
+                    toast("Erro na prévia: " + (err.data?.error ?? err.message ?? "erro"));
+                }
+            }
+            async startGeneration() {
+                const name = byId("seed-container").value;
+                if (!name)
+                    return;
+                try {
+                    const count = Number(byId("seed-count").value);
+                    const payload = this.buildPayload(count);
+                    const job = await this.api.post(`/api/seeds/${encodeURIComponent(name)}/generate`, payload);
+                    this.activeJobId = job.jobId;
+                    byId("seed-job-box").style.display = "block";
+                    this.renderJobStatus(job);
+                    this.startPolling();
+                }
+                catch (e) {
+                    const err = e;
+                    toast("Erro ao iniciar geração: " + (err.data?.error ?? err.message ?? "erro"));
+                }
+            }
+            async cancelActiveJob() {
+                if (!this.activeJobId)
+                    return;
+                await this.api.delete(`/api/seeds/jobs/${encodeURIComponent(this.activeJobId)}`);
+                toast("Cancelamento solicitado...");
+            }
+            buildPayload(count) {
+                const templateJson = byId("seed-template").value;
+                JSON.parse(templateJson);
+                const startRaw = byId("seed-id-start").value.trim();
+                const randomSeedRaw = byId("seed-random-seed").value.trim();
+                return {
+                    templateJson,
+                    count,
+                    mode: byId("seed-storage-mode").value,
+                    append: byId("seed-append").checked,
+                    idStrategy: byId("seed-id-strategy").value,
+                    idPrefix: byId("seed-id-prefix").value.trim() || null,
+                    idStartNumber: startRaw ? Number(startRaw) : null,
+                    guidV5Mode: byId("seed-v5-mode").value,
+                    guidV5Template: byId("seed-v5-template").value.trim() || null,
+                    guidV5Namespace: byId("seed-v5-ns").value.trim() || null,
+                    randomSeed: randomSeedRaw ? Number(randomSeedRaw) : null
+                };
+            }
+            startPolling() {
+                if (this.pollTimer !== null)
+                    window.clearInterval(this.pollTimer);
+                this.pollTimer = window.setInterval(() => void this.pollJob(), 400);
+            }
+            async pollJob() {
+                if (!this.activeJobId)
+                    return;
+                const status = await this.api.get(`/api/seeds/jobs/${encodeURIComponent(this.activeJobId)}`);
+                this.renderJobStatus(status);
+                if (status.status !== "Running") {
+                    if (this.pollTimer !== null) {
+                        window.clearInterval(this.pollTimer);
+                        this.pollTimer = null;
+                    }
+                    this.activeJobId = null;
+                    toast(`Geração ${status.status}: ${status.processedCount} itens (${status.elapsedSeconds}s)`);
+                    await this.loadSummary();
+                    await this.onCompleted();
+                }
+            }
+            renderJobStatus(job) {
+                byId("seed-job-bar").style.width = `${Math.min(100, job.percent)}%`;
+                byId("seed-job-text").textContent =
+                    `Status: ${job.status} | ${job.processedCount} / ${job.totalCount} (${job.percent}%) | ${job.itemsPerSecond} itens/s | ${job.elapsedSeconds}s` +
+                        (job.error ? ` | Erro: ${job.error}` : "");
+            }
+        }
+        Features.SeedsController = SeedsController;
+    })(Features = PhantomDashboard.Features || (PhantomDashboard.Features = {}));
+})(PhantomDashboard || (PhantomDashboard = {}));
+var PhantomDashboard;
+(function (PhantomDashboard) {
+    var Features;
+    (function (Features) {
+        var byId = PhantomDashboard.Infrastructure.byId;
+        var toast = PhantomDashboard.Infrastructure.toast;
         class ConfigController {
             constructor(api, onSaved) {
                 this.api = api;
@@ -563,6 +704,7 @@ var PhantomDashboard;
     var CostSimulatorController = PhantomDashboard.Features.CostSimulatorController;
     var ChaosController = PhantomDashboard.Features.ChaosController;
     var LogsController = PhantomDashboard.Features.LogsController;
+    var SeedsController = PhantomDashboard.Features.SeedsController;
     var ConfigController = PhantomDashboard.Features.ConfigController;
     const api = new DashboardApiClient();
     const overview = new OverviewController(api, async () => {
@@ -579,6 +721,9 @@ var PhantomDashboard;
         await overview.loadOverview();
     });
     const logs = new LogsController(api);
+    const seeds = new SeedsController(api, async () => {
+        await refreshAll();
+    });
     const config = new ConfigController(api, async () => {
         await chaos.load();
         await overview.loadOverview();
@@ -601,6 +746,8 @@ var PhantomDashboard;
             void chaos.load();
         if (name === "cost")
             void cost.runSimulation();
+        if (name === "seeds")
+            void seeds.loadSummary();
     }
     byId("exp-sql").addEventListener("keydown", (e) => {
         if (e.ctrlKey && e.key === "Enter")
@@ -629,12 +776,19 @@ var PhantomDashboard;
         saveConfigJson: () => config.save(),
         importContainerIntoSimulator: () => cost.importContainer(),
         applyCostPreset: (p) => cost.applyPreset(p),
-        runCostSimulation: () => cost.runSimulation()
+        runCostSimulation: () => cost.runSimulation(),
+        loadSeedContainer: () => seeds.loadSelectedContainer(),
+        onSeedIdStrategyChanged: () => seeds.onIdStrategyChanged(),
+        setSeedVolumePreset: (n) => seeds.setVolumePreset(n),
+        previewSeedGeneration: () => seeds.previewGeneration(),
+        startSeedGeneration: () => seeds.startGeneration(),
+        cancelSeedJob: () => seeds.cancelActiveJob()
     });
     void (async () => {
         await cost.loadRegions();
         await refreshAll();
         await logs.load();
+        await seeds.loadSummary();
         await config.load();
         await cost.runSimulation();
     })();

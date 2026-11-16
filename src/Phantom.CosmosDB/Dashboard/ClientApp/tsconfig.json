@@ -21,6 +21,7 @@
     "src/features/costSimulatorController.ts",
     "src/features/chaosController.ts",
     "src/features/logsController.ts",
+    "src/features/seedsController.ts",
     "src/features/configController.ts",
     "src/main.ts"
   ]
