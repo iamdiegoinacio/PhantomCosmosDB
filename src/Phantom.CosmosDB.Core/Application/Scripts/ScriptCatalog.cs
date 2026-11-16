@@ -85,4 +85,64 @@ internal sealed class ScriptCatalog
         ArgumentNullException.ThrowIfNull(triggerId);
         Triggers.Remove(triggerId);
     }
+
+    private const string JsTriggersNotInstalled =
+        "JavaScript stored procedure execution requires the Phantom.CosmosDB.JsTriggers package. " +
+        "Install it and call container.UseJsTriggers(), or use the C# delegate overload instead.";
+
+    private const string JsUdfNotInstalled =
+        "JavaScript UDF execution requires the Phantom.CosmosDB.JsTriggers package. " +
+        "Install it and call container.UseJsTriggers(), or use the C# delegate overload instead.";
+
+    private const string JsTriggerNotInstalled =
+        "JavaScript trigger execution requires the Phantom.CosmosDB.JsTriggers package. " +
+        "Install it and call container.UseJsTriggers(), or use the C# delegate overload instead.";
+
+    public void RegisterJsStoredProcedure(string id, string jsBody, ISprocEngine? sprocEngine, InMemoryContainer container)
+    {
+        if (sprocEngine is null)
+            throw new NotImplementedException(JsTriggersNotInstalled);
+
+        RegisterStoredProcedure(id, (pk, args) =>
+            sprocEngine.Execute(jsBody, pk, args, new PartitionScopedCollectionContext(container, pk)) ?? "null");
+
+        StoredProcedureProperties[id] = new StoredProcedureProperties { Id = id, Body = jsBody };
+    }
+
+    public void RegisterJsUdf(string name, string jsBody, IJsTriggerEngine? jsTriggerEngine)
+    {
+        if (jsTriggerEngine is not IJsUdfEngine)
+            throw new NotImplementedException(JsUdfNotInstalled);
+
+        UserDefinedFunctions["UDF." + name.TrimStart('.')] = UdfPlaceholder;
+        UdfProperties[name] = new UserDefinedFunctionProperties { Id = name, Body = jsBody };
+    }
+
+    public void RegisterJsTrigger(
+        string id,
+        TriggerType type,
+        TriggerOperation operation,
+        string jsBody,
+        IJsTriggerEngine? jsTriggerEngine)
+    {
+        if (jsTriggerEngine is null)
+            throw new NotImplementedException(JsTriggerNotInstalled);
+
+        TriggerProperties[id] = new TriggerProperties
+        {
+            Id = id,
+            TriggerType = type,
+            TriggerOperation = operation,
+            Body = jsBody
+        };
+
+        if (type == TriggerType.Pre)
+        {
+            RegisterTrigger(id, type, operation, doc => jsTriggerEngine.ExecutePreTrigger(jsBody, doc));
+        }
+        else
+        {
+            RegisterTrigger(id, type, operation, (Action<JObject>)(doc => jsTriggerEngine.ExecutePostTrigger(jsBody, doc)));
+        }
+    }
 }

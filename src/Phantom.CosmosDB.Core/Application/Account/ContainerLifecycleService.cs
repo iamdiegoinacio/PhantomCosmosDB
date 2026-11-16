@@ -80,6 +80,70 @@ internal static class ContainerLifecycleService
         return updatedProperties;
     }
 
+    public static Task<ContainerResponse> ReplaceContainerAsync(
+        InMemoryContainer container,
+        ContainerProperties existingProperties,
+        ContainerProperties updatedProperties,
+        Action<ContainerProperties> applyProperties,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (updatedProperties.Id != container.Id)
+        {
+            throw InMemoryCosmosException.Create(
+                $"Container id '{updatedProperties.Id}' does not match the existing container id '{container.Id}'.",
+                HttpStatusCode.BadRequest, 0, Guid.NewGuid().ToString(), SyntheticRequestCharge);
+        }
+
+        applyProperties(ApplyReplaceContainer(container, existingProperties, updatedProperties));
+        return Task.FromResult(CorePortDefaults.SdkMapper.CreateContainerResponse(container, updatedProperties, HttpStatusCode.OK));
+    }
+
+    public static Task<ResponseMessage> ReplaceContainerStreamAsync(
+        InMemoryContainer container,
+        ContainerProperties existingProperties,
+        ContainerProperties updatedProperties,
+        Action<ContainerProperties> applyProperties,
+        JsonSerializerSettings jsonSettings,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (updatedProperties.Id != container.Id)
+            return Task.FromResult(container.CreateResponseMessage(HttpStatusCode.BadRequest));
+
+        try
+        {
+            applyProperties(ApplyReplaceContainer(container, existingProperties, updatedProperties));
+        }
+        catch (CosmosException)
+        {
+            return Task.FromResult(container.CreateResponseMessage(HttpStatusCode.BadRequest));
+        }
+
+        return Task.FromResult(container.CreateResponseMessage(
+            HttpStatusCode.OK, JsonConvert.SerializeObject(updatedProperties, jsonSettings)));
+    }
+
+    public static Task<ContainerResponse> DeleteContainerAsync(
+        InMemoryContainer container,
+        Action markDeleted,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        markDeleted();
+        return Task.FromResult(CorePortDefaults.SdkMapper.CreateContainerResponse(container, null, HttpStatusCode.NoContent));
+    }
+
+    public static Task<ResponseMessage> DeleteContainerStreamAsync(
+        InMemoryContainer container,
+        Action markDeleted,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        markDeleted();
+        return Task.FromResult(container.CreateResponseMessage(HttpStatusCode.NoContent));
+    }
+
     public static Task<ThroughputResponse> ReplaceThroughputAsync(
         InMemoryContainer container,
         int throughput)
