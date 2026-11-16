@@ -7,403 +7,433 @@
   <link rel="stylesheet" href="__PHANTOM_BASE_PATH__/assets/styles.css" />
 </head>
 <body>
-  <header>
+  <header class="topbar">
     <div class="brand">
-      <div class="brand-badge">P</div>
+      <img class="brand-logo" src="__PHANTOM_BASE_PATH__/assets/logo.png" alt="Phantom Logo" />
       <div>
-        <h1>PhantomDB Dashboard</h1>
+        <h1>Phantom CosmosDB Emulator</h1>
         <small id="header-db">Conectando...</small>
       </div>
     </div>
-    <div class="header-actions">
+    <div class="topbar-actions">
       <select id="header-region" onchange="updateCostSettings()" title="Região Azure para cálculo de custos"></select>
-      <label class="pill row" style="gap:6px; cursor:pointer">
+      <label class="pill row" style="gap:5px; cursor:pointer">
         <input type="checkbox" id="header-log-cost" onchange="updateCostSettings()" />
         LogQueryCost
       </label>
       <span class="pill ok">Emulador Ativo</span>
       <span id="chaos-pill" class="pill">Chaos: Desligado</span>
-      <button class="btn secondary" onclick="refreshAll()">Atualizar</button>
-      <button class="btn" onclick="resetSeed()">Reset &amp; Re-seed</button>
+      <button class="btn topbar-btn sm" onclick="toggleTheme()" id="theme-toggle-btn">Tema Escuro</button>
+      <button class="btn topbar-btn sm" onclick="refreshAll()">Atualizar</button>
+      <button class="btn sm" onclick="resetSeed()">Reset &amp; Re-seed</button>
     </div>
   </header>
 
-  <nav>
-    <button class="active" data-tab="overview" onclick="switchTab('overview', this)">Visão Geral</button>
-    <button data-tab="explorer" onclick="switchTab('explorer', this)">Data Explorer &amp; SQL</button>
-    <button data-tab="cost" onclick="switchTab('cost', this)">Simulador de Custos</button>
-    <button data-tab="chaos" onclick="switchTab('chaos', this)">Chaos Engineering (Live)</button>
-    <button data-tab="logs" onclick="switchTab('logs', this)">Logs ao Vivo</button>
-    <button data-tab="seeds" onclick="switchTab('seeds', this)">Seeds &amp; Gerador</button>
-    <button data-tab="config" onclick="switchTab('config', this)">phantom.config.json</button>
-  </nav>
+  <div class="shell">
+    <!-- LEFT ICON RAIL -->
+    <aside class="icon-rail">
+      <button class="rail-btn" data-tab="quickstart" onclick="switchTab('quickstart', this)">
+        <svg viewBox="0 0 24 24"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+        <span>Quickstart</span>
+      </button>
+      <button class="rail-btn active" data-tab="overview" onclick="switchTab('overview', this)">
+        <svg viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/><path d="M3 12c0 1.66 4 3 9 3s9-1.34 9-3"/></svg>
+        <span>Explorer</span>
+      </button>
+      <button class="rail-btn" data-tab="cost" onclick="switchTab('cost', this)">
+        <svg viewBox="0 0 24 24"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>
+        <span>Custos</span>
+      </button>
+      <button class="rail-btn" data-tab="chaos" onclick="switchTab('chaos', this)">
+        <svg viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        <span>Chaos</span>
+      </button>
+      <button class="rail-btn" data-tab="seeds" onclick="switchTab('seeds', this)">
+        <svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        <span>Seeds</span>
+      </button>
+      <button class="rail-btn" data-tab="logs" onclick="switchTab('logs', this)">
+        <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+        <span>Logs</span>
+      </button>
+      <button class="rail-btn" data-tab="config" onclick="switchTab('config', this)">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+        <span>Config</span>
+      </button>
+    </aside>
 
-  <main>
-    <section id="tab-overview" class="tab active">
-      <div class="grid">
-        <div class="card"><h3>Banco de Dados</h3><div class="metric" id="ov-db">-</div></div>
-        <div class="card"><h3>Containers</h3><div class="metric" id="ov-containers">0</div></div>
-        <div class="card"><h3>Total de Documentos</h3><div class="metric" id="ov-items">0</div></div>
-        <div class="card"><h3>Chaos Engineering</h3><div class="metric" id="ov-chaos">Off</div></div>
-      </div>
-      <div class="grid mt" id="containers-grid"></div>
-    </section>
-
-    <section id="tab-explorer" class="tab">
-      <div class="card">
-        <div class="row space-between">
-          <div class="row">
-            <label for="exp-container"><strong>Container:</strong></label>
-            <select id="exp-container" onchange="loadContainerItems()"></select>
-            <label class="row muted-hint">
-              <input type="checkbox" id="exp-scan" checked /> EnableScanInQuery
-            </label>
-          </div>
-          <div class="row">
-            <span class="pill" id="exp-ru">RU: 0</span>
-            <button class="btn secondary" onclick="loadContainerItems()">Listar TOP 50</button>
-            <button class="btn" onclick="runQuery()">Executar SQL (Ctrl+Enter)</button>
-          </div>
-        </div>
-        <div class="mt">
-          <textarea id="exp-sql" rows="3">SELECT * FROM c</textarea>
-        </div>
-        <div id="exp-error" class="mt error-box"></div>
-      </div>
-
-      <div class="grid explorer-grid mt">
-        <div class="card">
-          <div class="row space-between">
-            <h3>Resultados (<span id="exp-count">0</span>)</h3>
-          </div>
-          <div id="exp-results" class="mt results-list"></div>
-        </div>
-        <div class="card">
-          <h3>Upsert Documento (JSON)</h3>
-          <textarea id="exp-upsert" rows="12" placeholder='{"id":"novo-1","categoria":"livros","nome":"Exemplo"}'></textarea>
-          <div class="row mt">
-            <button class="btn" onclick="upsertItem()">Salvar / Upsert</button>
-          </div>
+    <!-- RESOURCE TREE -->
+    <aside class="resource-tree" id="resource-tree-pane">
+      <div class="tree-toolbar">
+        <strong style="font-size:12px;">DATA</strong>
+        <div class="row" style="gap:4px;">
+          <button class="btn secondary sm" onclick="refreshAll()" title="Atualizar árvore">↻</button>
+          <button class="btn secondary sm" onclick="switchTab('seeds', document.querySelector('[data-tab=seeds]'))">+ Seeds</button>
         </div>
       </div>
-    </section>
+      <div class="tree-body" id="resource-tree-body"></div>
+    </aside>
 
-    <section id="tab-cost" class="tab">
-      <div class="card">
-        <div class="row space-between">
-          <div>
-            <h3 class="card-title">Simulador de Custos Regionais &amp; Queries (Estudo Azure Cosmos DB)</h3>
-            <small class="muted-hint">Simule SQL, quantidade de itens, tamanho dos documentos, IndexingPolicy e compare preços entre 14 países.</small>
-          </div>
-          <div class="row">
-            <button class="btn secondary sm" onclick="applyCostPreset('efficient')">Preset: Query Indexada (10 RU)</button>
-            <button class="btn secondary sm" onclick="applyCostPreset('cross')">Preset: Cross-Partition</button>
-            <button class="btn secondary sm" onclick="applyCostPreset('scan')">Preset: IndexingMode.None Scan</button>
-            <button class="btn" onclick="runCostSimulation()">Simular Custo</button>
-          </div>
-        </div>
-
-        <div class="grid mt">
-          <div class="field">
-            <label for="sim-region">País / Região Azure</label>
-            <select id="sim-region" onchange="runCostSimulation()"></select>
-          </div>
-          <div class="field">
-            <label for="sim-container-import">Importar Topologia do Container</label>
-            <select id="sim-container-import" onchange="importContainerIntoSimulator()"></select>
-          </div>
-          <div class="field">
-            <label for="sim-indexing-mode">IndexingPolicy Mode</label>
-            <select id="sim-indexing-mode" onchange="runCostSimulation()">
-              <option value="Consistent">Consistent (Indexado)</option>
-              <option value="None">None (Sem Índice / Full Scan)</option>
-            </select>
-          </div>
-          <div class="field">
-            <label for="sim-consistency">Consistency Level</label>
-            <select id="sim-consistency" onchange="runCostSimulation()">
-              <option value="Session">Session / Eventual (1x)</option>
-              <option value="Strong">Strong (2x RU)</option>
-              <option value="BoundedStaleness">BoundedStaleness (2x RU)</option>
-            </select>
-          </div>
-        </div>
-
-        <div class="grid mt">
-          <div class="field"><label for="sim-total-items">Nº de Itens no Banco</label><input type="number" id="sim-total-items" value="100000" min="1" /></div>
-          <div class="field"><label for="sim-returned-items">Itens Retornados / Query</label><input type="number" id="sim-returned-items" value="100" min="0" /></div>
-          <div class="field"><label for="sim-doc-kb">Tamanho Médio Doc (KB)</label><input type="number" id="sim-doc-kb" value="1" min="0.5" step="0.5" /></div>
-          <div class="field"><label for="sim-partitions">Partições Físicas</label><input type="number" id="sim-partitions" value="1" min="1" /></div>
-          <div class="field"><label for="sim-pk-paths">PartitionKeyPaths</label><input type="text" id="sim-pk-paths" value="/tenantId" /></div>
-          <div class="field"><label for="sim-queries-month">Queries / Mês</label><input type="number" id="sim-queries-month" value="1000000" min="0" /></div>
-          <div class="field"><label for="sim-storage-gb">Armazenamento (GB)</label><input type="number" id="sim-storage-gb" value="10" min="0" step="0.5" /></div>
-          <div class="field"><label for="sim-prov-override">RU/s Provisionado (0 = auto)</label><input type="number" id="sim-prov-override" value="400" min="0" step="100" /></div>
-        </div>
-
-        <div class="row mt">
-          <label class="row muted-hint"><input type="checkbox" id="sim-free-tier" onchange="runCostSimulation()" /> Aplicar Free Tier (1.000 RU/s + 25 GB)</label>
-          <label class="row muted-hint"><input type="checkbox" id="sim-az" onchange="runCostSimulation()" /> Availability Zones (+25%)</label>
-        </div>
-
-        <div class="mt">
-          <label for="sim-sql" class="muted-hint" style="display:block; margin-bottom:6px;">SQL Query a simular:</label>
-          <textarea id="sim-sql" rows="3">SELECT TOP 100 c.id, c.total, c.status FROM c WHERE c.tenantId = @tenantId AND c.status = 'paid' ORDER BY c.createdAt DESC</textarea>
-        </div>
+    <!-- MAIN WORKSPACE -->
+    <div class="workspace">
+      <div class="workspace-tabs">
+        <div class="ws-tab active" id="ws-active-title">Home</div>
       </div>
 
-      <div class="grid mt">
-        <div class="card"><h3>RU Estimada / Query</h3><div class="metric" id="sim-ru-exec">-</div></div>
-        <div class="card"><h3>Volume Mensal</h3><div class="metric" id="sim-monthly-mru">-</div></div>
-        <div class="card"><h3>Break-Even (400 RU/s)</h3><div class="metric" id="sim-breakeven">-</div></div>
-        <div class="card"><h3>Diferença vs East US 2</h3><div class="metric" id="sim-vs-eastus">-</div></div>
+      <div class="workspace-content">
+        <!-- QUICKSTART -->
+        <section id="tab-quickstart" class="tab">
+          <div class="card" style="max-width:920px;">
+            <h2 style="margin:0 0 6px; font-weight:400;">Congratulations! Your Phantom CosmosDB Emulator is running.</h2>
+            <p class="muted-hint" style="margin:0 0 16px;">Conecte sua aplicação .NET alterando apenas a Connection String no <code>appsettings.Development.json</code>.</p>
+
+            <div class="field">
+              <label>AccountEndpoint (Phantom Local)</label>
+              <div class="copy-row">
+                <input type="text" id="qs-uri" readonly value="https://phantom.local/" />
+                <button class="btn secondary sm" onclick="copyField('qs-uri')">Copiar</button>
+              </div>
+            </div>
+
+            <div class="field mt">
+              <label>Primary Connection String (appsettings.Development.json)</label>
+              <div class="copy-row">
+                <input type="text" id="qs-conn" readonly value="AccountEndpoint=https://phantom.local/;AccountKey=phantom-in-memory;" />
+                <button class="btn secondary sm" onclick="copyField('qs-conn')">Copiar</button>
+              </div>
+            </div>
+
+            <div class="field mt">
+              <label>Database Name</label>
+              <div class="copy-row">
+                <input type="text" id="qs-db" readonly value="LojaDb" />
+                <button class="btn secondary sm" onclick="copyField('qs-db')">Copiar</button>
+              </div>
+            </div>
+
+            <h3 class="mt">1. Program.cs (Único para Produção e Desenvolvimento)</h3>
+            <pre>using Phantom.CosmosDB;
+
+var builder = WebApplication.CreateBuilder(args);
+builder.AddCosmosDb();
+
+var app = builder.Build();
+app.UsePhantomDashboard();
+app.Run();</pre>
+          </div>
+        </section>
+
+        <!-- OVERVIEW / HOME -->
+        <section id="tab-overview" class="tab active">
+          <div class="home-hero">
+            <h2>Welcome to Phantom Cosmos DB</h2>
+            <div class="muted-hint">In-memory Azure Cosmos DB emulator with Chaos Engineering, Cost Simulator &amp; Seed Generator</div>
+            <div class="home-cards">
+              <div class="home-tile" onclick="switchTab('quickstart', document.querySelector('[data-tab=quickstart]'))">
+                <strong style="color:var(--accent);">⚡ Quickstart &amp; Connect</strong>
+                <p class="muted-hint" style="font-size:12.5px; margin:6px 0 0;">Copie a Connection String padrão e veja como conectar seu app .NET.</p>
+              </div>
+              <div class="home-tile" onclick="switchTab('cost', document.querySelector('[data-tab=cost]'))">
+                <strong style="color:var(--accent);">💲 Simulador de Custos (14 Países)</strong>
+                <p class="muted-hint" style="font-size:12.5px; margin:6px 0 0;">Estime RUs, Serverless × Provisioned × Autoscale e compare regiões.</p>
+              </div>
+              <div class="home-tile" onclick="switchTab('seeds', document.querySelector('[data-tab=seeds]'))">
+                <strong style="color:var(--accent);">🌱 Gerador de Seeds em Massa</strong>
+                <p class="muted-hint" style="font-size:12.5px; margin:6px 0 0;">Gere milhares ou milhões de documentos com IDs v4/v5/v7, ULID ou prefixo.</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="grid mt">
+            <div class="card"><h3>Banco de Dados</h3><div class="metric" id="ov-db">-</div></div>
+            <div class="card"><h3>Containers</h3><div class="metric" id="ov-containers">0</div></div>
+            <div class="card"><h3>Total de Documentos</h3><div class="metric" id="ov-items">0</div></div>
+            <div class="card"><h3>Chaos Engineering</h3><div class="metric" id="ov-chaos">Off</div></div>
+          </div>
+          <div class="grid mt" id="containers-grid"></div>
+        </section>
+
+        <!-- DATA EXPLORER (MASTER-DETAIL + SQL + SETTINGS) -->
+        <section id="tab-explorer" class="tab">
+          <div class="card">
+            <div class="row space-between">
+              <div class="row">
+                <label for="exp-container"><strong>Container:</strong></label>
+                <select id="exp-container" onchange="loadContainerItems()"></select>
+                <label class="row muted-hint">
+                  <input type="checkbox" id="exp-scan" checked /> EnableScanInQuery
+                </label>
+              </div>
+              <div class="row">
+                <span class="pill surface-pill" id="exp-ru">RU: 0</span>
+                <button class="btn secondary" onclick="newExplorerItem()">+ New Item</button>
+                <button class="btn secondary" onclick="loadContainerItems()">Listar TOP 50</button>
+                <button class="btn" onclick="runQuery()">Execute Query (Ctrl+Enter)</button>
+              </div>
+            </div>
+            <div class="mt">
+              <textarea id="exp-sql" rows="2">SELECT * FROM c</textarea>
+            </div>
+            <div id="exp-error" class="mt error-box"></div>
+          </div>
+
+          <div class="explorer-split mt">
+            <div class="card" style="padding:10px;">
+              <div class="row space-between" style="margin-bottom:8px;">
+                <h3 style="margin:0;">Items (<span id="exp-count">0</span>)</h3>
+              </div>
+              <div id="exp-master-list" class="items-master-list"></div>
+            </div>
+
+            <div class="card">
+              <div class="row space-between" style="margin-bottom:8px;">
+                <h3 style="margin:0;" id="exp-editor-title">Documento Selecionado / Upsert</h3>
+                <div class="row">
+                  <button class="btn" onclick="upsertItem()">Save / Upsert</button>
+                  <button class="btn danger sm" id="exp-delete-btn" onclick="deleteSelectedItem()" style="display:none;">Delete</button>
+                </div>
+              </div>
+              <textarea id="exp-upsert" rows="16" placeholder='{"id":"novo-1","categoria":"livros","nome":"Exemplo"}'></textarea>
+              <div id="exp-results" class="mt results-list" style="display:none;"></div>
+            </div>
+          </div>
+
+          <div class="card mt" id="exp-container-settings-card" style="display:none;">
+            <h3>Scale &amp; Settings do Container</h3>
+            <div id="exp-container-settings" class="mt"></div>
+          </div>
+        </section>
+
+        <!-- COST SIMULATOR -->
+        <section id="tab-cost" class="tab">
+          <div class="card">
+            <div class="row space-between">
+              <div>
+                <h3 class="card-title">Simulador de Custos Regionais &amp; Queries (Estudo Azure Cosmos DB)</h3>
+                <small class="muted-hint">Simule SQL, quantidade de itens, tamanho dos documentos, IndexingPolicy e compare preços entre 14 países.</small>
+              </div>
+              <div class="row">
+                <button class="btn secondary sm" onclick="applyCostPreset('efficient')">Preset: Query Indexada (10 RU)</button>
+                <button class="btn secondary sm" onclick="applyCostPreset('cross')">Preset: Cross-Partition</button>
+                <button class="btn secondary sm" onclick="applyCostPreset('scan')">Preset: IndexingMode.None Scan</button>
+                <button class="btn" onclick="runCostSimulation()">Simular Custo</button>
+              </div>
+            </div>
+
+            <div class="grid mt">
+              <div class="field"><label for="sim-region">País / Região Azure</label><select id="sim-region" onchange="runCostSimulation()"></select></div>
+              <div class="field"><label for="sim-container-import">Importar Topologia do Container</label><select id="sim-container-import" onchange="importContainerIntoSimulator()"></select></div>
+              <div class="field"><label for="sim-indexing-mode">IndexingPolicy Mode</label><select id="sim-indexing-mode" onchange="runCostSimulation()"><option value="Consistent">Consistent (Indexado)</option><option value="None">None (Sem Índice / Full Scan)</option></select></div>
+              <div class="field"><label for="sim-consistency">Consistency Level</label><select id="sim-consistency" onchange="runCostSimulation()"><option value="Session">Session / Eventual (1x)</option><option value="Strong">Strong (2x RU)</option><option value="BoundedStaleness">BoundedStaleness (2x RU)</option></select></div>
+            </div>
+
+            <div class="grid mt">
+              <div class="field"><label for="sim-total-items">Nº de Itens no Banco</label><input type="number" id="sim-total-items" value="100000" min="1" /></div>
+              <div class="field"><label for="sim-returned-items">Itens Retornados / Query</label><input type="number" id="sim-returned-items" value="100" min="0" /></div>
+              <div class="field"><label for="sim-doc-kb">Tamanho Médio Doc (KB)</label><input type="number" id="sim-doc-kb" value="1" min="0.5" step="0.5" /></div>
+              <div class="field"><label for="sim-partitions">Partições Físicas</label><input type="number" id="sim-partitions" value="1" min="1" /></div>
+              <div class="field"><label for="sim-pk-paths">PartitionKeyPaths</label><input type="text" id="sim-pk-paths" value="/tenantId" /></div>
+              <div class="field"><label for="sim-queries-month">Queries / Mês</label><input type="number" id="sim-queries-month" value="1000000" min="0" /></div>
+              <div class="field"><label for="sim-storage-gb">Armazenamento (GB)</label><input type="number" id="sim-storage-gb" value="10" min="0" step="0.5" /></div>
+              <div class="field"><label for="sim-prov-override">RU/s Provisionado (0 = auto)</label><input type="number" id="sim-prov-override" value="400" min="0" step="100" /></div>
+            </div>
+
+            <div class="row mt">
+              <label class="row muted-hint"><input type="checkbox" id="sim-free-tier" onchange="runCostSimulation()" /> Aplicar Free Tier (1.000 RU/s + 25 GB)</label>
+              <label class="row muted-hint"><input type="checkbox" id="sim-az" onchange="runCostSimulation()" /> Availability Zones (+25%)</label>
+            </div>
+
+            <div class="mt">
+              <label for="sim-sql" class="muted-hint" style="display:block; margin-bottom:5px;">SQL Query a simular:</label>
+              <textarea id="sim-sql" rows="2">SELECT TOP 100 c.id, c.total, c.status FROM c WHERE c.tenantId = @tenantId AND c.status = 'paid' ORDER BY c.createdAt DESC</textarea>
+            </div>
+          </div>
+
+          <div class="grid mt">
+            <div class="card"><h3>RU Estimada / Query</h3><div class="metric" id="sim-ru-exec">-</div></div>
+            <div class="card"><h3>Volume Mensal</h3><div class="metric" id="sim-monthly-mru">-</div></div>
+            <div class="card"><h3>Break-Even (400 RU/s)</h3><div class="metric" id="sim-breakeven">-</div></div>
+            <div class="card"><h3>Diferença vs East US 2</h3><div class="metric" id="sim-vs-eastus">-</div></div>
+          </div>
+
+          <div class="grid mt">
+            <div class="card"><h3>Serverless (USD/mês)</h3><div class="metric" id="sim-serverless-usd">-</div><small id="sim-serverless-det" class="muted-hint"></small></div>
+            <div class="card"><h3>Provisioned Manual (USD/mês)</h3><div class="metric" id="sim-prov-usd">-</div><small id="sim-prov-det" class="muted-hint"></small></div>
+            <div class="card"><h3>Autoscale (USD/mês)</h3><div class="metric" id="sim-auto-usd">-</div><small id="sim-auto-det" class="muted-hint"></small></div>
+            <div class="card"><h3>Baseline: EUA (East US 2)</h3><div style="font-size:15px; font-weight:700;" id="sim-baseline-usd">-</div><small class="muted-hint">Mesma carga e armazenamento em East US 2</small></div>
+          </div>
+
+          <div class="card mt">
+            <h3>Breakdown da Estimativa de RU</h3>
+            <div id="sim-breakdown" class="mt"></div>
+            <div id="sim-warnings" class="mt"></div>
+          </div>
+        </section>
+
+        <!-- CHAOS ENGINEERING -->
+        <section id="tab-chaos" class="tab">
+          <div class="card">
+            <div class="row space-between">
+              <div>
+                <h3 class="card-title">Chaos Engineering em Tempo Real</h3>
+                <small class="muted-hint">Alterações têm efeito imediato na API em memória sem precisar reiniciar.</small>
+              </div>
+              <div class="row">
+                <button class="btn secondary" onclick="disableAllChaos()">Desativar Tudo</button>
+                <button class="btn" onclick="applyChaos()">Aplicar Agora (Live)</button>
+              </div>
+            </div>
+
+            <div class="grid mt">
+              <div class="switch-card"><div><label for="ch-EnableRandomThrottling">EnableRandomThrottling</label><small>Aplica probabilidade de falha</small></div><input type="checkbox" id="ch-EnableRandomThrottling" /></div>
+              <div class="switch-card"><div><label for="ch-ThrottlingProbability">ThrottlingProbability</label><small>0.0 a 1.0</small></div><input type="number" step="0.05" min="0" max="1" id="ch-ThrottlingProbability" class="num-input" /></div>
+              <div class="switch-card"><div><label for="ch-SimulateHighLatency">SimulateHighLatency</label><small>Injeta atraso antes da resposta</small></div><input type="checkbox" id="ch-SimulateHighLatency" /></div>
+              <div class="switch-card"><div><label for="ch-MinLatencyMs">MinLatencyMs</label><small>Latência mínima (ms)</small></div><input type="number" min="0" id="ch-MinLatencyMs" class="num-input" /></div>
+              <div class="switch-card"><div><label for="ch-MaxLatencyMs">MaxLatencyMs</label><small>Latência máxima (ms)</small></div><input type="number" min="0" id="ch-MaxLatencyMs" class="num-input" /></div>
+              <div class="switch-card"><div><label for="ch-RetryAfterMs">RetryAfterMs</label><small>Header x-ms-retry-after-ms</small></div><input type="number" min="0" id="ch-RetryAfterMs" class="num-input" /></div>
+            </div>
+
+            <h3 class="mt">Simulações HTTP Cosmos DB</h3>
+            <div class="grid">
+              <div class="switch-card"><label for="ch-Simulate429_TooManyRequests">Simulate429_TooManyRequests (sub 3200)</label><input type="checkbox" id="ch-Simulate429_TooManyRequests" /></div>
+              <div class="switch-card"><label for="ch-Simulate503_ServiceUnavailable">Simulate503_ServiceUnavailable</label><input type="checkbox" id="ch-Simulate503_ServiceUnavailable" /></div>
+              <div class="switch-card"><label for="ch-Simulate408_RequestTimeout">Simulate408_RequestTimeout</label><input type="checkbox" id="ch-Simulate408_RequestTimeout" /></div>
+              <div class="switch-card"><label for="ch-Simulate403_Forbidden">Simulate403_Forbidden</label><input type="checkbox" id="ch-Simulate403_Forbidden" /></div>
+              <div class="switch-card"><label for="ch-Simulate401_Unauthorized">Simulate401_Unauthorized</label><input type="checkbox" id="ch-Simulate401_Unauthorized" /></div>
+              <div class="switch-card"><label for="ch-Simulate409_Conflict">Simulate409_Conflict</label><input type="checkbox" id="ch-Simulate409_Conflict" /></div>
+              <div class="switch-card"><label for="ch-Simulate413_EntityTooLarge">Simulate413_EntityTooLarge</label><input type="checkbox" id="ch-Simulate413_EntityTooLarge" /></div>
+              <div class="switch-card"><label for="ch-Simulate412_PreconditionFailed">Simulate412_PreconditionFailed</label><input type="checkbox" id="ch-Simulate412_PreconditionFailed" /></div>
+              <div class="switch-card"><label for="ch-Simulate400_BadRequest">Simulate400_BadRequest</label><input type="checkbox" id="ch-Simulate400_BadRequest" /></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- SEEDS & GENERATOR -->
+        <section id="tab-seeds" class="tab">
+          <div class="card">
+            <div class="row space-between">
+              <div>
+                <h3 class="card-title">Seeds Gravadas &amp; Gerador de Massa de Dados</h3>
+                <small id="seed-file-info" class="muted-hint"></small>
+              </div>
+              <div class="row">
+                <select id="seed-container" onchange="loadSeedContainer()"></select>
+                <button class="btn secondary" onclick="previewSeedGeneration()">Pré-visualizar (5 itens)</button>
+                <button class="btn" onclick="startSeedGeneration()">Gerar Massa de Dados</button>
+              </div>
+            </div>
+
+            <div class="grid mt">
+              <div class="field">
+                <label for="seed-id-strategy">Tipo de ID</label>
+                <select id="seed-id-strategy" onchange="onSeedIdStrategyChanged()">
+                  <option value="Auto">Auto (inferir do modelo)</option>
+                  <option value="PrefixSequential">Prefixo Sequencial (ex.: cli-1, cli-2...)</option>
+                  <option value="GuidV7">GUID v7 (ordenável por tempo / RFC 9562)</option>
+                  <option value="GuidV5">GUID v5 (SHA-1 determinístico ou random)</option>
+                  <option value="GuidV4">GUID v4 (aleatório padrão)</option>
+                  <option value="Ulid">ULID (26 chars ordenável)</option>
+                  <option value="NumericString">Numérico em string ("1", "2"...)</option>
+                </select>
+              </div>
+              <div class="field"><label for="seed-count">Quantidade de Itens</label><input type="number" id="seed-count" value="100" min="1" max="2000000" /></div>
+              <div class="field"><label for="seed-storage-mode">Modo de Persistência</label><select id="seed-storage-mode"><option value="PersistAndLoad">Persistir em Resources/Seeds/*.json + Carregar</option><option value="InMemoryOnly">Somente em Memória (Alta Escala / 1M+)</option></select></div>
+              <div class="field"><label for="seed-random-seed">Random Seed (opcional p/ determinismo)</label><input type="number" id="seed-random-seed" placeholder="Ex.: 42" /></div>
+            </div>
+
+            <div class="row mt">
+              <span class="muted-hint" style="font-size:12px;">Volumes rápidos:</span>
+              <button class="btn secondary sm" onclick="setSeedVolumePreset(100)">100</button>
+              <button class="btn secondary sm" onclick="setSeedVolumePreset(1000)">1.000</button>
+              <button class="btn secondary sm" onclick="setSeedVolumePreset(10000)">10.000</button>
+              <button class="btn secondary sm" onclick="setSeedVolumePreset(100000)">100.000</button>
+              <button class="btn secondary sm" onclick="setSeedVolumePreset(500000)">500.000</button>
+              <button class="btn secondary sm" onclick="setSeedVolumePreset(1000000)">1.000.000</button>
+              <label class="row muted-hint" style="margin-left:auto;"><input type="checkbox" id="seed-append" checked /> Append (preservar seeds existentes)</label>
+            </div>
+
+            <div id="seed-prefix-group" class="grid mt">
+              <div class="field"><label for="seed-id-prefix">Prefixo do ID (opcional)</label><input type="text" id="seed-id-prefix" placeholder="Ex.: cli- (vazio = infere do modelo)" /></div>
+              <div class="field"><label for="seed-id-start">Número Inicial (opcional)</label><input type="number" id="seed-id-start" placeholder="Auto após máximo existente" /></div>
+            </div>
+
+            <div id="seed-v5-group" class="grid mt" style="display:none;">
+              <div class="field"><label for="seed-v5-mode">Modo de Entrada do GUID v5</label><select id="seed-v5-mode"><option value="DeterministicTemplate">Determinístico por Template de Campos</option><option value="Random">Aleatório (entropia por item)</option></select></div>
+              <div class="field"><label for="seed-v5-template">Template GUID v5 (campos do documento)</label><input type="text" id="seed-v5-template" value="{nome}+{cpf}" placeholder="Ex.: {nome}+{cpf} ou {meta.regiao}|{index}" /></div>
+              <div class="field"><label for="seed-v5-ns">Namespace GUID (opcional)</label><input type="text" id="seed-v5-ns" placeholder="Padrão: 6ba7b810-9dad-11d1-80b4-00c04fd430c8" /></div>
+            </div>
+
+            <div id="seed-job-box" class="card mt" style="display:none;">
+              <div class="row space-between">
+                <span id="seed-job-text" class="mono-cell">Iniciando...</span>
+                <button class="btn danger sm" onclick="cancelSeedJob()">Cancelar</button>
+              </div>
+              <div class="progress-track mt"><div id="seed-job-bar" class="progress-fill"></div></div>
+            </div>
+          </div>
+
+          <div class="grid explorer-grid mt">
+            <div class="card">
+              <h3>Seeds Gravadas (mostrando <span id="seed-preview-count">0</span> primeiros)</h3>
+              <div id="seed-stored-list" class="mt results-list"></div>
+            </div>
+            <div class="card">
+              <h3>Documento-Modelo (Template) &amp; Prévia</h3>
+              <textarea id="seed-template" rows="9" class="mt"></textarea>
+              <h3 class="mt">Prévia Gerada</h3>
+              <div id="seed-generated-preview" class="mt results-list" style="max-height:260px;"></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- LIVE LOGS -->
+        <section id="tab-logs" class="tab">
+          <div class="card">
+            <div class="row space-between">
+              <div class="row">
+                <input type="text" id="log-filter" class="filter-input" placeholder="Filtrar por path, container ou SQL..." oninput="renderLogs()" />
+                <label class="row muted-hint"><input type="checkbox" id="log-auto" checked /> Auto-refresh (1.5s)</label>
+              </div>
+              <div class="row">
+                <button class="btn secondary" onclick="loadLogs()">Atualizar</button>
+                <button class="btn danger" onclick="clearLogs()">Limpar Logs</button>
+              </div>
+            </div>
+            <div class="mt logs-wrap">
+              <table>
+                <thead>
+                  <tr><th>Hora (UTC)</th><th>Método</th><th>Status</th><th>Container</th><th>RU</th><th>Custo Est. (USD)</th><th>Tempo</th><th>Path / SQL</th></tr>
+                </thead>
+                <tbody id="logs-body"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- CONFIG EDITOR -->
+        <section id="tab-config" class="tab">
+          <div class="card">
+            <div class="row space-between">
+              <div>
+                <h3 class="card-title">Editor de phantom.config.json</h3>
+                <small id="cfg-path" class="muted-hint"></small>
+              </div>
+              <div class="row">
+                <button class="btn secondary" onclick="formatConfigJson()">Formatar JSON</button>
+                <button class="btn" onclick="saveConfigJson()">Salvar no Disco</button>
+              </div>
+            </div>
+            <textarea id="cfg-editor" rows="22" class="mt"></textarea>
+          </div>
+        </section>
       </div>
+    </div>
+  </div>
 
-      <div class="grid mt">
-        <div class="card">
-          <h3>Serverless (USD/mês)</h3>
-          <div class="metric" id="sim-serverless-usd">-</div>
-          <small id="sim-serverless-det" class="muted-hint"></small>
-        </div>
-        <div class="card">
-          <h3>Provisioned Manual (USD/mês)</h3>
-          <div class="metric" id="sim-prov-usd">-</div>
-          <small id="sim-prov-det" class="muted-hint"></small>
-        </div>
-        <div class="card">
-          <h3>Autoscale (USD/mês)</h3>
-          <div class="metric" id="sim-auto-usd">-</div>
-          <small id="sim-auto-det" class="muted-hint"></small>
-        </div>
-        <div class="card">
-          <h3>Baseline: EUA (East US 2)</h3>
-          <div style="font-size:16px; font-weight:700;" id="sim-baseline-usd">-</div>
-          <small class="muted-hint">Mesma carga e armazenamento em East US 2</small>
-        </div>
-      </div>
-
-      <div class="card mt">
-        <h3>Breakdown da Estimativa de RU</h3>
-        <div id="sim-breakdown" class="mt"></div>
-        <div id="sim-warnings" class="mt"></div>
-      </div>
-    </section>
-
-    <section id="tab-chaos" class="tab">
-      <div class="card">
-        <div class="row space-between">
-          <div>
-            <h3 class="card-title">Chaos Engineering em Tempo Real</h3>
-            <small class="muted-hint">Alterações têm efeito imediato na API em memória sem precisar reiniciar.</small>
-          </div>
-          <div class="row">
-            <button class="btn secondary" onclick="disableAllChaos()">Desativar Tudo</button>
-            <button class="btn" onclick="applyChaos()">Aplicar Agora (Live)</button>
-          </div>
-        </div>
-
-        <div class="grid mt">
-          <div class="switch-card">
-            <div><label for="ch-EnableRandomThrottling">EnableRandomThrottling</label><small>Aplica probabilidade de falha</small></div>
-            <input type="checkbox" id="ch-EnableRandomThrottling" />
-          </div>
-          <div class="switch-card">
-            <div><label for="ch-ThrottlingProbability">ThrottlingProbability</label><small>0.0 a 1.0</small></div>
-            <input type="number" step="0.05" min="0" max="1" id="ch-ThrottlingProbability" class="num-input" />
-          </div>
-          <div class="switch-card">
-            <div><label for="ch-SimulateHighLatency">SimulateHighLatency</label><small>Injeta atraso antes da resposta</small></div>
-            <input type="checkbox" id="ch-SimulateHighLatency" />
-          </div>
-          <div class="switch-card">
-            <div><label for="ch-MinLatencyMs">MinLatencyMs</label><small>Latência mínima (ms)</small></div>
-            <input type="number" min="0" id="ch-MinLatencyMs" class="num-input" />
-          </div>
-          <div class="switch-card">
-            <div><label for="ch-MaxLatencyMs">MaxLatencyMs</label><small>Latência máxima (ms)</small></div>
-            <input type="number" min="0" id="ch-MaxLatencyMs" class="num-input" />
-          </div>
-          <div class="switch-card">
-            <div><label for="ch-RetryAfterMs">RetryAfterMs</label><small>Header x-ms-retry-after-ms</small></div>
-            <input type="number" min="0" id="ch-RetryAfterMs" class="num-input" />
-          </div>
-        </div>
-
-        <h3 class="mt">Simulações HTTP Cosmos DB</h3>
-        <div class="grid">
-          <div class="switch-card"><label for="ch-Simulate429_TooManyRequests">Simulate429_TooManyRequests (sub 3200)</label><input type="checkbox" id="ch-Simulate429_TooManyRequests" /></div>
-          <div class="switch-card"><label for="ch-Simulate503_ServiceUnavailable">Simulate503_ServiceUnavailable</label><input type="checkbox" id="ch-Simulate503_ServiceUnavailable" /></div>
-          <div class="switch-card"><label for="ch-Simulate408_RequestTimeout">Simulate408_RequestTimeout</label><input type="checkbox" id="ch-Simulate408_RequestTimeout" /></div>
-          <div class="switch-card"><label for="ch-Simulate403_Forbidden">Simulate403_Forbidden</label><input type="checkbox" id="ch-Simulate403_Forbidden" /></div>
-          <div class="switch-card"><label for="ch-Simulate401_Unauthorized">Simulate401_Unauthorized</label><input type="checkbox" id="ch-Simulate401_Unauthorized" /></div>
-          <div class="switch-card"><label for="ch-Simulate409_Conflict">Simulate409_Conflict</label><input type="checkbox" id="ch-Simulate409_Conflict" /></div>
-          <div class="switch-card"><label for="ch-Simulate413_EntityTooLarge">Simulate413_EntityTooLarge</label><input type="checkbox" id="ch-Simulate413_EntityTooLarge" /></div>
-          <div class="switch-card"><label for="ch-Simulate412_PreconditionFailed">Simulate412_PreconditionFailed</label><input type="checkbox" id="ch-Simulate412_PreconditionFailed" /></div>
-          <div class="switch-card"><label for="ch-Simulate400_BadRequest">Simulate400_BadRequest</label><input type="checkbox" id="ch-Simulate400_BadRequest" /></div>
-        </div>
-      </div>
-    </section>
-
-    <section id="tab-logs" class="tab">
-      <div class="card">
-        <div class="row space-between">
-          <div class="row">
-            <input type="text" id="log-filter" class="filter-input" placeholder="Filtrar por path, container ou SQL..." oninput="renderLogs()" />
-            <label class="row muted-hint">
-              <input type="checkbox" id="log-auto" checked /> Auto-refresh (1.5s)
-            </label>
-          </div>
-          <div class="row">
-            <button class="btn secondary" onclick="loadLogs()">Atualizar</button>
-            <button class="btn danger" onclick="clearLogs()">Limpar Logs</button>
-          </div>
-        </div>
-        <div class="mt logs-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Hora (UTC)</th>
-                <th>Método</th>
-                <th>Status</th>
-                <th>Container</th>
-                <th>RU</th>
-                <th>Custo Est. (USD)</th>
-                <th>Tempo</th>
-                <th>Path / SQL</th>
-              </tr>
-            </thead>
-            <tbody id="logs-body"></tbody>
-          </table>
-        </div>
-      </div>
-    </section>
-
-    <section id="tab-seeds" class="tab">
-      <div class="card">
-        <div class="row space-between">
-          <div>
-            <h3 class="card-title">Seeds Gravadas &amp; Gerador de Massa de Dados</h3>
-            <small id="seed-file-info" class="muted-hint"></small>
-          </div>
-          <div class="row">
-            <select id="seed-container" onchange="loadSeedContainer()"></select>
-            <button class="btn secondary" onclick="previewSeedGeneration()">Pré-visualizar (5 itens)</button>
-            <button class="btn" onclick="startSeedGeneration()">Gerar Massa de Dados</button>
-          </div>
-        </div>
-
-        <div class="grid mt">
-          <div class="field">
-            <label for="seed-id-strategy">Tipo de ID</label>
-            <select id="seed-id-strategy" onchange="onSeedIdStrategyChanged()">
-              <option value="Auto">Auto (inferir do modelo)</option>
-              <option value="PrefixSequential">Prefixo Sequencial (ex.: cli-1, cli-2...)</option>
-              <option value="GuidV7">GUID v7 (ordenável por tempo / RFC 9562)</option>
-              <option value="GuidV5">GUID v5 (SHA-1 determinístico ou random)</option>
-              <option value="GuidV4">GUID v4 (aleatório padrão)</option>
-              <option value="Ulid">ULID (26 chars ordenável)</option>
-              <option value="NumericString">Numérico em string ("1", "2"...)</option>
-            </select>
-          </div>
-          <div class="field">
-            <label for="seed-count">Quantidade de Itens</label>
-            <input type="number" id="seed-count" value="100" min="1" max="2000000" />
-          </div>
-          <div class="field">
-            <label for="seed-storage-mode">Modo de Persistência</label>
-            <select id="seed-storage-mode">
-              <option value="PersistAndLoad">Persistir em Resources/Seeds/*.json + Carregar</option>
-              <option value="InMemoryOnly">Somente em Memória (Alta Escala / 1M+)</option>
-            </select>
-          </div>
-          <div class="field">
-            <label for="seed-random-seed">Random Seed (opcional p/ determinismo)</label>
-            <input type="number" id="seed-random-seed" placeholder="Ex.: 42" />
-          </div>
-        </div>
-
-        <div class="row mt">
-          <span class="muted-hint" style="font-size:12px;">Volumes rápidos:</span>
-          <button class="btn secondary sm" onclick="setSeedVolumePreset(100)">100</button>
-          <button class="btn secondary sm" onclick="setSeedVolumePreset(1000)">1.000</button>
-          <button class="btn secondary sm" onclick="setSeedVolumePreset(10000)">10.000</button>
-          <button class="btn secondary sm" onclick="setSeedVolumePreset(100000)">100.000</button>
-          <button class="btn secondary sm" onclick="setSeedVolumePreset(500000)">500.000</button>
-          <button class="btn secondary sm" onclick="setSeedVolumePreset(1000000)">1.000.000</button>
-          <label class="row muted-hint" style="margin-left:auto;">
-            <input type="checkbox" id="seed-append" checked /> Append (preservar seeds existentes)
-          </label>
-        </div>
-
-        <div id="seed-prefix-group" class="grid mt">
-          <div class="field">
-            <label for="seed-id-prefix">Prefixo do ID (opcional)</label>
-            <input type="text" id="seed-id-prefix" placeholder="Ex.: cli- (vazio = infere do modelo)" />
-          </div>
-          <div class="field">
-            <label for="seed-id-start">Número Inicial (opcional)</label>
-            <input type="number" id="seed-id-start" placeholder="Auto após máximo existente" />
-          </div>
-        </div>
-
-        <div id="seed-v5-group" class="grid mt" style="display:none;">
-          <div class="field">
-            <label for="seed-v5-mode">Modo de Entrada do GUID v5</label>
-            <select id="seed-v5-mode">
-              <option value="DeterministicTemplate">Determinístico por Template de Campos</option>
-              <option value="Random">Aleatório (entropia por item)</option>
-            </select>
-          </div>
-          <div class="field">
-            <label for="seed-v5-template">Template GUID v5 (campos do documento)</label>
-            <input type="text" id="seed-v5-template" value="{nome}+{cpf}" placeholder="Ex.: {nome}+{cpf} ou {meta.regiao}|{index}" />
-          </div>
-          <div class="field">
-            <label for="seed-v5-ns">Namespace GUID (opcional)</label>
-            <input type="text" id="seed-v5-ns" placeholder="Padrão: 6ba7b810-9dad-11d1-80b4-00c04fd430c8" />
-          </div>
-        </div>
-
-        <div id="seed-job-box" class="card mt" style="display:none; background:var(--bg);">
-          <div class="row space-between">
-            <span id="seed-job-text" class="mono-cell">Iniciando...</span>
-            <button class="btn danger sm" onclick="cancelSeedJob()">Cancelar</button>
-          </div>
-          <div class="progress-track mt">
-            <div id="seed-job-bar" class="progress-fill"></div>
-          </div>
-        </div>
-      </div>
-
-      <div class="grid explorer-grid mt">
-        <div class="card">
-          <h3>Seeds Gravadas (mostrando <span id="seed-preview-count">0</span> primeiros)</h3>
-          <div id="seed-stored-list" class="mt results-list"></div>
-        </div>
-        <div class="card">
-          <h3>Documento-Modelo (Template) &amp; Prévia</h3>
-          <textarea id="seed-template" rows="9" class="mt"></textarea>
-          <h3 class="mt">Prévia Gerada</h3>
-          <div id="seed-generated-preview" class="mt results-list" style="max-height:280px;"></div>
-        </div>
-      </div>
-    </section>
-
-    <section id="tab-config" class="tab">
-      <div class="card">
-        <div class="row space-between">
-          <div>
-            <h3 class="card-title">Editor de phantom.config.json</h3>
-            <small id="cfg-path" class="muted-hint"></small>
-          </div>
-          <div class="row">
-            <button class="btn secondary" onclick="formatConfigJson()">Formatar JSON</button>
-            <button class="btn" onclick="saveConfigJson()">Salvar no Disco</button>
-          </div>
-        </div>
-        <textarea id="cfg-editor" rows="22" class="mt"></textarea>
-      </div>
-    </section>
-  </main>
+  <footer class="statusbar">
+    <span id="sb-left">Ready</span>
+    <span id="sb-right">Phantom.CosmosDB Emulator</span>
+  </footer>
 
   <div id="toast"></div>
   <script src="__PHANTOM_BASE_PATH__/assets/app.js"></script>

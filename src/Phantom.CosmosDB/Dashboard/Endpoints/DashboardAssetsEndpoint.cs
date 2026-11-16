@@ -39,7 +39,24 @@ internal sealed class DashboardAssetsEndpoint : IDashboardEndpointHandler
             return true;
         }
 
+        if (ctx.Path.Equals("/assets/logo.png", StringComparison.OrdinalIgnoreCase))
+        {
+            await WriteBinaryAssetAsync(ctx.HttpContext, "logo.png", "image/png");
+            return true;
+        }
+
         return false;
+    }
+
+    private static async Task WriteBinaryAssetAsync(HttpContext httpContext, string fileName, string contentType)
+    {
+        var assembly = Assembly.GetExecutingAssembly();
+        var resourceName = $"Phantom.CosmosDB.Resources.Dashboard.{fileName}";
+        await using var stream = assembly.GetManifestResourceStream(resourceName)
+                                 ?? throw new InvalidOperationException($"Embedded resource '{resourceName}' não encontrado.");
+        httpContext.Response.StatusCode = StatusCodes.Status200OK;
+        httpContext.Response.ContentType = contentType;
+        await stream.CopyToAsync(httpContext.Response.Body, httpContext.RequestAborted);
     }
 
     private static string LoadEmbeddedAsset(string fileName)

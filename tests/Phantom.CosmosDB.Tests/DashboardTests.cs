@@ -62,6 +62,10 @@ public sealed class DashboardTests
             Assert.Equal(HttpStatusCode.OK, jsResp.StatusCode);
             Assert.Equal("application/javascript", jsResp.Content.Headers.ContentType?.MediaType);
 
+            var logoResp = await http.GetAsync("/_phantom/assets/logo.png");
+            Assert.Equal(HttpStatusCode.OK, logoResp.StatusCode);
+            Assert.Equal("image/png", logoResp.Content.Headers.ContentType?.MediaType);
+
             // 2. Overview
             var overview = JObject.Parse(await http.GetStringAsync("/_phantom/api/overview"));
             Assert.Equal("LojaDb", overview["databaseName"]?.ToString());

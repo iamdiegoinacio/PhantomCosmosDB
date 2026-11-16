@@ -23,6 +23,7 @@
     "src/features/logsController.ts",
     "src/features/seedsController.ts",
     "src/features/configController.ts",
+    "src/features/resourceTreeController.ts",
     "src/main.ts"
   ]
 }

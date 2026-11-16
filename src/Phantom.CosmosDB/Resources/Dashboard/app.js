@@ -88,9 +88,10 @@ var PhantomDashboard;
         var byId = PhantomDashboard.Infrastructure.byId;
         var toast = PhantomDashboard.Infrastructure.toast;
         class OverviewController {
-            constructor(api, onRefreshDependents) {
+            constructor(api, onRefreshDependents, onOverviewLoaded) {
                 this.api = api;
                 this.onRefreshDependents = onRefreshDependents;
+                this.onOverviewLoaded = onOverviewLoaded;
                 this.latestOverview = null;
             }
             get currentOverview() {
@@ -113,7 +114,11 @@ var PhantomDashboard;
                 const chaosPill = byId("chaos-pill");
                 chaosPill.textContent = ov.chaosActive ? "Chaos: ATIVO" : "Chaos: Desligado";
                 chaosPill.className = ov.chaosActive ? "pill chaos" : "pill";
+                byId("qs-db").value = ov.databaseName;
+                byId("sb-left").textContent =
+                    `${ov.databaseName} | ${ov.containerCount} Containers | ${ov.totalItems} Itens | Região: ${ov.activeRegion.regionName} | Chaos: ${ov.chaosActive ? "ON" : "Off"}`;
                 this.renderContainers(ov);
+                this.onOverviewLoaded?.(ov);
             }
             async resetSeed() {
                 await this.api.post("/api/seed/reset");
@@ -177,11 +182,16 @@ var PhantomDashboard;
                 this.api = api;
                 this.getOverview = getOverview;
                 this.onMutated = onMutated;
+                this.selectedContainer = "";
+                this.selectedItemId = null;
+                this.selectedItem = null;
+                this.selectedPkPaths = ["/id"];
             }
             async loadContainerItems() {
                 const name = byId("exp-container").value;
                 if (!name)
                     return;
+                this.hideContainerSettings();
                 byId("exp-sql").value = "SELECT TOP 50 * FROM c";
                 await this.runQuery();
             }
@@ -189,6 +199,7 @@ var PhantomDashboard;
                 const name = byId("exp-container").value;
                 if (!name)
                     return;
+                this.selectedContainer = name;
                 const sql = byId("exp-sql").value;
                 const enableScan = byId("exp-scan").checked;
                 const errBox = byId("exp-error");
@@ -209,15 +220,69 @@ var PhantomDashboard;
                 const name = byId("exp-container").value;
                 const raw = byId("exp-upsert").value;
                 try {
-                    JSON.parse(raw);
+                    const parsed = JSON.parse(raw);
                     await this.api.post(`/api/containers/${encodeURIComponent(name)}/items`, raw);
                     toast("Item salvo com sucesso.");
+                    if (typeof parsed.id === "string") {
+                        this.selectedItemId = parsed.id;
+                        this.selectedItem = parsed;
+                    }
                     await this.onMutated();
                 }
                 catch (e) {
                     const err = e;
                     toast("Erro no JSON/Upsert: " + (err.data?.error ?? err.message ?? "inválido"));
                 }
+            }
+            newItem() {
+                const name = byId("exp-container").value;
+                const cMeta = this.getOverview()?.containers.find(c => c.name === name);
+                const pkPath = cMeta?.partitionKeyPaths?.[0]?.replace(/^\//, "") || "partitionKey";
+                this.selectedItemId = null;
+                this.selectedItem = null;
+                byId("exp-editor-title").textContent = "Novo Documento";
+                byId("exp-delete-btn").style.display = "none";
+                const template = { id: `item-${Date.now()}` };
+                if (pkPath !== "id") {
+                    template[pkPath] = "valor";
+                }
+                byId("exp-upsert").value = JSON.stringify(template, null, 2);
+                const rows = byId("exp-master-list").querySelectorAll(".master-item-row");
+                rows.forEach(r => r.classList.remove("active"));
+            }
+            async deleteSelectedItem() {
+                if (!this.selectedContainer || !this.selectedItemId || !this.selectedItem)
+                    return;
+                await this.deleteItem(this.selectedContainer, this.selectedItemId, this.selectedItem, this.selectedPkPaths);
+                this.selectedItemId = null;
+                this.selectedItem = null;
+                byId("exp-delete-btn").style.display = "none";
+                byId("exp-editor-title").textContent = "Documento Selecionado / Upsert";
+                byId("exp-upsert").value = "";
+            }
+            showContainerSettings(containerName) {
+                const name = containerName || byId("exp-container").value;
+                const card = byId("exp-container-settings-card");
+                const box = byId("exp-container-settings");
+                const cMeta = this.getOverview()?.containers.find(c => c.name === name);
+                if (!cMeta) {
+                    card.style.display = "none";
+                    return;
+                }
+                card.style.display = "block";
+                const pkList = (cMeta.partitionKeyPaths ?? ["/id"]).join(", ");
+                const indexing = cMeta.indexingMode ?? "Consistent";
+                box.innerHTML = `
+        <div class="grid">
+          <div class="card"><h3>Container</h3><div class="metric" style="font-size:18px;">${cMeta.name}</div></div>
+          <div class="card"><h3>Documentos</h3><div class="metric" style="font-size:18px;">${cMeta.itemCount}</div></div>
+          <div class="card"><h3>Partition Key</h3><div class="metric" style="font-size:18px;">${pkList}</div></div>
+          <div class="card"><h3>Indexing Mode</h3><div class="metric" style="font-size:18px;">${indexing}</div></div>
+        </div>
+      `;
+            }
+            hideContainerSettings() {
+                byId("exp-container-settings-card").style.display = "none";
             }
             async deleteItem(containerName, itemId, item, pkPaths) {
                 const pk = extractPartitionKeyParam(item, pkPaths);
@@ -226,33 +291,59 @@ var PhantomDashboard;
                 await this.onMutated();
             }
             renderQueryResults(containerName, items) {
-                const box = byId("exp-results");
-                box.innerHTML = "";
+                const master = byId("exp-master-list");
+                const resultsBox = byId("exp-results");
+                master.innerHTML = "";
+                resultsBox.innerHTML = "";
                 const cMeta = this.getOverview()?.containers.find(c => c.name === containerName);
                 const pkPaths = cMeta?.partitionKeyPaths ?? ["/id"];
-                for (const item of items) {
-                    const wrap = document.createElement("div");
-                    wrap.className = "result-item";
-                    const header = document.createElement("div");
-                    header.className = "row space-between result-item-header";
-                    const idLabel = document.createElement("span");
-                    idLabel.className = "result-item-id";
-                    const itemId = typeof item.id === "string" ? item.id : undefined;
-                    idLabel.textContent = itemId ? `id: ${itemId}` : "projeção";
-                    header.appendChild(idLabel);
-                    if (itemId) {
-                        const delBtn = document.createElement("button");
-                        delBtn.className = "btn danger sm";
-                        delBtn.textContent = "Excluir";
-                        delBtn.onclick = () => void this.deleteItem(containerName, itemId, item, pkPaths);
-                        header.appendChild(delBtn);
-                    }
-                    const pre = document.createElement("pre");
-                    pre.textContent = JSON.stringify(item, null, 2);
-                    wrap.appendChild(header);
-                    wrap.appendChild(pre);
-                    box.appendChild(wrap);
+                this.selectedPkPaths = pkPaths;
+                if (items.length === 0) {
+                    master.innerHTML = '<div class="muted-hint" style="padding:12px;">Nenhum documento encontrado.</div>';
+                    byId("exp-delete-btn").style.display = "none";
+                    return;
                 }
+                let selectedIndex = -1;
+                items.forEach((item, index) => {
+                    const itemId = typeof item.id === "string" ? item.id : undefined;
+                    if (itemId && itemId === this.selectedItemId) {
+                        selectedIndex = index;
+                    }
+                });
+                if (selectedIndex < 0) {
+                    selectedIndex = 0;
+                }
+                items.forEach((item, index) => {
+                    const itemId = typeof item.id === "string" ? item.id : `projecao-${index + 1}`;
+                    const pkVal = extractPartitionKeyParam(item, pkPaths);
+                    const row = document.createElement("div");
+                    row.className = index === selectedIndex ? "master-item-row active" : "master-item-row";
+                    const idSpan = document.createElement("span");
+                    idSpan.className = "master-id";
+                    idSpan.textContent = itemId;
+                    const pkSpan = document.createElement("span");
+                    pkSpan.className = "master-pk";
+                    pkSpan.textContent = pkVal;
+                    row.appendChild(idSpan);
+                    row.appendChild(pkSpan);
+                    row.onclick = () => {
+                        master.querySelectorAll(".master-item-row").forEach(el => el.classList.remove("active"));
+                        row.classList.add("active");
+                        this.selectItem(containerName, item, pkPaths);
+                    };
+                    master.appendChild(row);
+                });
+                this.selectItem(containerName, items[selectedIndex], pkPaths);
+            }
+            selectItem(containerName, item, pkPaths) {
+                this.selectedContainer = containerName;
+                this.selectedPkPaths = pkPaths;
+                const itemId = typeof item.id === "string" ? item.id : null;
+                this.selectedItemId = itemId;
+                this.selectedItem = item;
+                byId("exp-editor-title").textContent = itemId ? `Documento: ${itemId}` : "Projeção de Query";
+                byId("exp-upsert").value = JSON.stringify(item, null, 2);
+                byId("exp-delete-btn").style.display = itemId ? "inline-flex" : "none";
             }
         }
         Features.ExplorerController = ExplorerController;
@@ -697,8 +788,91 @@ var PhantomDashboard;
 })(PhantomDashboard || (PhantomDashboard = {}));
 var PhantomDashboard;
 (function (PhantomDashboard) {
+    var Features;
+    (function (Features) {
+        var byId = PhantomDashboard.Infrastructure.byId;
+        class ResourceTreeController {
+            constructor(handler) {
+                this.handler = handler;
+                this.expandedDb = true;
+                this.expandedContainers = {};
+                this.activeNodeKey = "home";
+                this.lastOverview = null;
+            }
+            render(overview) {
+                this.lastOverview = overview;
+                const body = byId("resource-tree-body");
+                body.innerHTML = "";
+                body.appendChild(this.createNode("home", "tree-node", "🏠", "Home", () => {
+                    this.activeNodeKey = "home";
+                    this.render(overview);
+                    this.handler.onSelectHome();
+                }));
+                const dbArrow = this.expandedDb ? "▾" : "▸";
+                body.appendChild(this.createNode(`db:${overview.databaseName}`, "tree-node", dbArrow, `🗄 ${overview.databaseName}`, () => {
+                    this.expandedDb = !this.expandedDb;
+                    this.render(overview);
+                }));
+                if (!this.expandedDb) {
+                    return;
+                }
+                for (const container of overview.containers) {
+                    if (this.expandedContainers[container.name] === undefined) {
+                        this.expandedContainers[container.name] = true;
+                    }
+                    const isExpanded = this.expandedContainers[container.name];
+                    const arrow = isExpanded ? "▾" : "▸";
+                    body.appendChild(this.createNode(`container:${container.name}`, "tree-node tree-child", arrow, `📦 ${container.name} (${container.itemCount})`, () => {
+                        this.expandedContainers[container.name] = !isExpanded;
+                        this.render(overview);
+                    }));
+                    if (!isExpanded) {
+                        continue;
+                    }
+                    body.appendChild(this.createNode(`items:${container.name}`, "tree-node tree-subchild", "📄", "Items", () => {
+                        this.activeNodeKey = `items:${container.name}`;
+                        this.render(overview);
+                        this.handler.onSelectItems(container.name);
+                    }));
+                    body.appendChild(this.createNode(`query:${container.name}`, "tree-node tree-subchild", "⚡", "New SQL Query", () => {
+                        this.activeNodeKey = `query:${container.name}`;
+                        this.render(overview);
+                        this.handler.onSelectNewQuery(container.name);
+                    }));
+                    body.appendChild(this.createNode(`settings:${container.name}`, "tree-node tree-subchild", "⚙", "Scale & Settings", () => {
+                        this.activeNodeKey = `settings:${container.name}`;
+                        this.render(overview);
+                        this.handler.onSelectSettings(container.name);
+                    }));
+                }
+            }
+            setActiveNode(key) {
+                this.activeNodeKey = key;
+                if (this.lastOverview) {
+                    this.render(this.lastOverview);
+                }
+            }
+            createNode(key, className, icon, label, onClick) {
+                const el = document.createElement("div");
+                el.className = this.activeNodeKey === key ? `${className} active` : className;
+                el.onclick = onClick;
+                const iconSpan = document.createElement("span");
+                iconSpan.textContent = icon;
+                el.appendChild(iconSpan);
+                const textSpan = document.createElement("span");
+                textSpan.textContent = label;
+                el.appendChild(textSpan);
+                return el;
+            }
+        }
+        Features.ResourceTreeController = ResourceTreeController;
+    })(Features = PhantomDashboard.Features || (PhantomDashboard.Features = {}));
+})(PhantomDashboard || (PhantomDashboard = {}));
+var PhantomDashboard;
+(function (PhantomDashboard) {
     var DashboardApiClient = PhantomDashboard.Infrastructure.DashboardApiClient;
     var byId = PhantomDashboard.Infrastructure.byId;
+    var toast = PhantomDashboard.Infrastructure.toast;
     var OverviewController = PhantomDashboard.Features.OverviewController;
     var ExplorerController = PhantomDashboard.Features.ExplorerController;
     var CostSimulatorController = PhantomDashboard.Features.CostSimulatorController;
@@ -706,10 +880,47 @@ var PhantomDashboard;
     var LogsController = PhantomDashboard.Features.LogsController;
     var SeedsController = PhantomDashboard.Features.SeedsController;
     var ConfigController = PhantomDashboard.Features.ConfigController;
+    var ResourceTreeController = PhantomDashboard.Features.ResourceTreeController;
+    const TAB_TITLES = {
+        quickstart: "Quickstart",
+        overview: "Home",
+        explorer: "Data Explorer",
+        cost: "Simulador de Custos",
+        chaos: "Chaos Engineering",
+        seeds: "Seeds & Gerador",
+        logs: "Logs ao Vivo",
+        config: "phantom.config.json"
+    };
     const api = new DashboardApiClient();
+    const resourceTree = new ResourceTreeController({
+        onSelectHome: () => {
+            switchTab("overview", document.querySelector("[data-tab=overview]"));
+        },
+        onSelectItems: (containerName) => {
+            byId("exp-container").value = containerName;
+            switchTab("explorer", document.querySelector("[data-tab=explorer]"));
+            byId("ws-active-title").textContent = `${containerName} > Items`;
+            void explorer.loadContainerItems();
+        },
+        onSelectNewQuery: (containerName) => {
+            byId("exp-container").value = containerName;
+            explorer.hideContainerSettings();
+            switchTab("explorer", document.querySelector("[data-tab=explorer]"));
+            byId("ws-active-title").textContent = `${containerName} > New SQL Query`;
+            byId("exp-sql").focus();
+        },
+        onSelectSettings: (containerName) => {
+            byId("exp-container").value = containerName;
+            switchTab("explorer", document.querySelector("[data-tab=explorer]"));
+            byId("ws-active-title").textContent = `${containerName} > Scale & Settings`;
+            explorer.showContainerSettings(containerName);
+        }
+    });
     const overview = new OverviewController(api, async () => {
         await explorer.runQuery();
         await chaos.load();
+    }, ov => {
+        resourceTree.render(ov);
     });
     const explorer = new ExplorerController(api, () => overview.currentOverview, async () => {
         await refreshAll();
@@ -735,9 +946,15 @@ var PhantomDashboard;
     }
     function switchTab(name, btn) {
         document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
-        document.querySelectorAll("nav button").forEach(b => b.classList.remove("active"));
+        document.querySelectorAll(".rail-btn").forEach(b => b.classList.remove("active"));
         byId("tab-" + name).classList.add("active");
-        btn.classList.add("active");
+        if (btn) {
+            btn.classList.add("active");
+        }
+        else {
+            document.querySelector(`[data-tab=${name}]`)?.classList.add("active");
+        }
+        byId("ws-active-title").textContent = TAB_TITLES[name] ?? name;
         if (name === "logs")
             void logs.load();
         if (name === "config")
@@ -748,6 +965,27 @@ var PhantomDashboard;
             void cost.runSimulation();
         if (name === "seeds")
             void seeds.loadSummary();
+    }
+    function applyTheme(dark) {
+        document.body.classList.toggle("theme-dark", dark);
+        const btn = byId("theme-toggle-btn");
+        btn.textContent = dark ? "☀ Light" : "🌙 Dark";
+    }
+    function toggleTheme() {
+        const isDark = !document.body.classList.contains("theme-dark");
+        localStorage.setItem("phantom-theme", isDark ? "dark" : "light");
+        applyTheme(isDark);
+    }
+    async function copyField(id) {
+        const input = byId(id);
+        try {
+            await navigator.clipboard.writeText(input.value);
+        }
+        catch {
+            input.select();
+            document.execCommand("copy");
+        }
+        toast("Copiado para a área de transferência!");
     }
     byId("exp-sql").addEventListener("keydown", (e) => {
         if (e.ctrlKey && e.key === "Enter")
@@ -762,11 +1000,15 @@ var PhantomDashboard;
     Object.assign(window, {
         switchTab,
         refreshAll,
+        toggleTheme,
+        copyField,
         resetSeed: () => overview.resetSeed(),
         updateCostSettings: () => cost.updateCostSettings(),
         loadContainerItems: () => explorer.loadContainerItems(),
         runQuery: () => explorer.runQuery(),
         upsertItem: () => explorer.upsertItem(),
+        newExplorerItem: () => explorer.newItem(),
+        deleteSelectedItem: () => explorer.deleteSelectedItem(),
         applyChaos: () => chaos.apply(),
         disableAllChaos: () => chaos.disableAll(),
         loadLogs: () => logs.load(),
@@ -784,6 +1026,7 @@ var PhantomDashboard;
         startSeedGeneration: () => seeds.startGeneration(),
         cancelSeedJob: () => seeds.cancelActiveJob()
     });
+    applyTheme(localStorage.getItem("phantom-theme") === "dark");
     void (async () => {
         await cost.loadRegions();
         await refreshAll();
