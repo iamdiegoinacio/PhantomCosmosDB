@@ -13,6 +13,12 @@ O núcleo em memória segue **Clean Architecture** e **Ports & Adapters (DIP)**,
 - **`Infrastructure/`**: adaptadores concretos (`Storage/InMemoryItemStore`, `Storage/InMemoryChangeFeedLog`, `HttpGateway/CosmosRoutingMessageHandler`, `GatewayDatabaseLifecycleRouter`, `GatewayContainerLifecycleRouter`, `HybridRowBatchCodec`, `SdkInterop/CosmosResponseFactory`, `FeedIterators/`, `Persistence/`).
 - **Raiz (`CorePortDefaults`, `InMemoryContainer` em `partial` files, `FakeCosmosHandler`)**: Composition Root interno e fachada compatível com `Microsoft.Azure.Cosmos.Container`.
 
+### Integração em Soluções Multicamadas (Host vs Demais Camadas)
+Em soluções divididas em múltiplos assemblies (`Domain`, `Application`, `Infrastructure`, `Api`/Host):
+- **`Domain` / `Application`**: não possuem dependência de `Phantom.CosmosDB`.
+- **`Infrastructure` (Repositórios)**: depende apenas de `Microsoft.Azure.Cosmos` e injeta `CosmosClient` normalmente.
+- **`Api` (Host / Composition Root)**: instala `Phantom.CosmosDB`, chama `builder.AddCosmosDb()` (ou `services.AddCosmosDb(environment, configuration)` quando o DI está centralizado em um módulo `IoC`) e `app.UsePhantomDashboard()`. O arquivo `phantom.config.json` e `Resources/Seeds/*.json` podem residir no `ContentRootPath` do Host ou na raiz da `.sln`.
+
 ---
 
 ## 2. Visão Geral de Componentes

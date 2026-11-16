@@ -116,9 +116,31 @@ Mantenha a Connection String real no `appsettings.json` (ou variáveis de ambien
 >
 > **Modo Legado:** `AddCosmosPhantomEmulator(...)` e `UseCosmosPhantomSeederAsync()` continuam suportados para projetos que utilizam a flag `"UseCosmosPhantom": true`.
 
-### Passo 4: Criar `phantom.config.json` (Containers, Índices, Geo e Chaos)
+### Passo 4: Criar `phantom.config.json` (Containers, Índices, Geo, Custos e Chaos)
 
-Crie **`phantom.config.json`** na raiz da solução/projeto (ao lado do `.sln`), no `ContentRootPath` ou em `Resources/` *(também há fallback automático para `CosmosPhantom.config.json`)*:
+Crie **`phantom.config.json`** na raiz da solução (ao lado do `.sln`), no `ContentRootPath` da API ou em `Resources/` *(também há fallback automático para `CosmosPhantom.config.json`)*.
+
+> [!TIP]
+> Declare **apenas os containers que a sua aplicação realmente utiliza**. As seções `CosmosCostOptions` e `CosmosChaosEngineering` são **opcionais** — se omitidas, o Phantom usa os padrões (Chaos desativado e custo padrão).
+
+**Exemplo mínimo (1 container):**
+
+```json
+{
+  "CosmosDbEmulator": {
+    "DatabaseName": "MinhaAppDb",
+    "Containers": [
+      {
+        "Name": "Usuarios",
+        "PartitionKeyPath": "/id",
+        "Throughput": 400
+      }
+    ]
+  }
+}
+```
+
+**Exemplo completo (MultiHash, UniqueKeys, ComputedProperties, CompositeIndexes, Geo, Custos e Chaos):**
 
 ```json
 {
@@ -168,6 +190,13 @@ Crie **`phantom.config.json`** na raiz da solução/projeto (ao lado do `.sln`),
       }
     ]
   },
+  "CosmosCostOptions": {
+    "Region": "brazil-south",
+    "BillingMode": "Serverless",
+    "LogQueryCost": true,
+    "ApplyFreeTier": false,
+    "ConsistencyLevel": "Session"
+  },
   "CosmosChaosEngineering": {
     "EnableRandomThrottling": false,
     "ThrottlingProbability": 0.2,
@@ -187,6 +216,14 @@ Crie **`phantom.config.json`** na raiz da solução/projeto (ao lado do `.sln`),
   }
 }
 ```
+
+### Projetos Multicamadas (Vários Assemblies)
+
+Se a sua solução for separada em múltiplas camadas (`Domain`, `Application`, `Infrastructure`, `Api`/Host):
+- **Instale o `Phantom.CosmosDB` apenas no projeto Host (`MinhaApp.Api`)**, que é o *Composition Root* da aplicação.
+- A camada de `Infrastructure` continua dependendo somente de **`Microsoft.Azure.Cosmos`** e recebe o `CosmosClient` por injeção de dependência normalmente.
+- Caso um módulo de `IoC`/`Bootstrapper` separado já registrava um `CosmosClient` manualmente, remova o registro manual (ou use a sobrecarga `services.AddCosmosDb(environment, configuration)` nesse módulo, mantendo `app.UsePhantomDashboard()` no Host).
+- Tanto `phantom.config.json` quanto `Resources/Seeds/*.json` podem ficar na pasta do Host ou na raiz da solução (ao lado do `.sln`).
 
 ### Passo 5: (Opcional) Adicionar Auto-Seeding em `Resources/Seeds/`
 
