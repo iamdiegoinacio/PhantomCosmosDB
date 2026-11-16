@@ -6,6 +6,7 @@ namespace PhantomDashboard {
   import CostSimulatorController = PhantomDashboard.Features.CostSimulatorController;
   import ChaosController = PhantomDashboard.Features.ChaosController;
   import LogsController = PhantomDashboard.Features.LogsController;
+  import SeedsController = PhantomDashboard.Features.SeedsController;
   import ConfigController = PhantomDashboard.Features.ConfigController;
 
   const api = new DashboardApiClient();
@@ -29,6 +30,10 @@ namespace PhantomDashboard {
 
   const logs = new LogsController(api);
 
+  const seeds = new SeedsController(api, async () => {
+    await refreshAll();
+  });
+
   const config = new ConfigController(api, async () => {
     await chaos.load();
     await overview.loadOverview();
@@ -49,6 +54,7 @@ namespace PhantomDashboard {
     if (name === "config") void config.load();
     if (name === "chaos") void chaos.load();
     if (name === "cost") void cost.runSimulation();
+    if (name === "seeds") void seeds.loadSummary();
   }
 
   byId("exp-sql").addEventListener("keydown", (e: KeyboardEvent) => {
@@ -79,13 +85,20 @@ namespace PhantomDashboard {
     saveConfigJson: () => config.save(),
     importContainerIntoSimulator: () => cost.importContainer(),
     applyCostPreset: (p: "efficient" | "scan" | "cross") => cost.applyPreset(p),
-    runCostSimulation: () => cost.runSimulation()
+    runCostSimulation: () => cost.runSimulation(),
+    loadSeedContainer: () => seeds.loadSelectedContainer(),
+    onSeedIdStrategyChanged: () => seeds.onIdStrategyChanged(),
+    setSeedVolumePreset: (n: number) => seeds.setVolumePreset(n),
+    previewSeedGeneration: () => seeds.previewGeneration(),
+    startSeedGeneration: () => seeds.startGeneration(),
+    cancelSeedJob: () => seeds.cancelActiveJob()
   });
 
   void (async () => {
     await cost.loadRegions();
     await refreshAll();
     await logs.load();
+    await seeds.loadSummary();
     await config.load();
     await cost.runSimulation();
   })();

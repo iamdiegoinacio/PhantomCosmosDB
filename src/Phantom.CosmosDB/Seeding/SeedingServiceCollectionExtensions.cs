@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
+using Phantom.CosmosDB.Seeding.Generation;
 using Phantom.CosmosDB.Seeding.Interfaces;
 using Phantom.CosmosDB.Seeding.Services;
 
@@ -15,6 +16,7 @@ internal static class SeedingServiceCollectionExtensions
         services.AddTransient<ICosmosDbManager, CosmosDbManager>();
         services.AddTransient<ICosmosDbBulkInserter, CosmosDbBulkInserter>();
         services.AddTransient<ICosmosDbSeederService, CosmosDbSeederService>();
+        services.AddSingleton<SeedGenerationJobCoordinator>();
 
         return services;
     }

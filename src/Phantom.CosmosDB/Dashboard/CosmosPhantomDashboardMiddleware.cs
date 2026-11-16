@@ -18,6 +18,7 @@ internal sealed class CosmosPhantomDashboardMiddleware
         new ChaosEndpoint(),
         new LogsEndpoint(),
         new CostEndpoint(),
+        new SeedsEndpoint(),
         new ConfigEndpoint()
     ];
 
