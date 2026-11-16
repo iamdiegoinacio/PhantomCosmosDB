@@ -8,5 +8,16 @@
     "removeComments": false,
     "lib": ["ES2020", "DOM", "DOM.Iterable"]
   },
-  "files": ["app.ts"]
+  "files": [
+    "src/domain/models.ts",
+    "src/infrastructure/dom.ts",
+    "src/infrastructure/apiClient.ts",
+    "src/features/overviewController.ts",
+    "src/features/explorerController.ts",
+    "src/features/costSimulatorController.ts",
+    "src/features/chaosController.ts",
+    "src/features/logsController.ts",
+    "src/features/configController.ts",
+    "src/main.ts"
+  ]
 }
