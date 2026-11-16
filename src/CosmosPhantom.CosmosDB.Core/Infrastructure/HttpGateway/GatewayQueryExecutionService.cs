@@ -65,6 +65,7 @@ internal sealed class GatewayQueryExecutionService
         _queryLog.Add(sqlQuery);
 
         var partitionKey = CosmosHttpHeaders.ExtractPartitionKey(request) ?? fallbackPartitionKey;
+        var enableScanInQuery = CosmosHttpHeaders.ExtractEnableScanInQuery(request);
         var maxItemCount = CosmosHttpHeaders.ExtractMaxItemCount(request);
         var continuation = CosmosHttpHeaders.DecodeContinuation(request);
         var rangeId = CosmosHttpHeaders.ExtractPartitionKeyRangeId(request);
@@ -98,7 +99,7 @@ internal sealed class GatewayQueryExecutionService
                 if (isGroupByQuery)
                 {
                     allDocuments = await HandleGroupByQueryAsync(
-                        parsed, queryBody, partitionKey, cancellationToken);
+                        parsed, queryBody, partitionKey, enableScanInQuery, cancellationToken);
                 }
                 else if (isOrderByQuery)
                 {
@@ -110,15 +111,13 @@ internal sealed class GatewayQueryExecutionService
                     payloadPropertyName = payloadField?.Alias ?? "payload";
 
                     allDocuments = await HandleOrderByQueryAsync(
-                        parsed, queryBody, partitionKey, orderByAlias, payloadPropertyName, cancellationToken);
+                        parsed, queryBody, partitionKey, enableScanInQuery, orderByAlias, payloadPropertyName, cancellationToken);
                 }
                 else
                 {
                     var simplifiedSql = CosmosSqlParser.SimplifySdkQuery(parsed);
                     var queryDef = BuildQueryDefinition(simplifiedSql, queryBody);
-                    var requestOptions = partitionKey is not null
-                        ? new QueryRequestOptions { PartitionKey = partitionKey }
-                        : null;
+                    var requestOptions = BuildQueryRequestOptions(partitionKey, enableScanInQuery);
                     allDocuments = await GatewayFeedAndChangeFeedService.DrainIterator(
                         _container.GetItemQueryIterator<JToken>(queryDef, requestOptions: requestOptions),
                         cancellationToken);
@@ -127,9 +126,7 @@ internal sealed class GatewayQueryExecutionService
             else
             {
                 var queryDef = BuildQueryDefinition(sqlQuery, queryBody);
-                var requestOptions = partitionKey is not null
-                    ? new QueryRequestOptions { PartitionKey = partitionKey }
-                    : null;
+                var requestOptions = BuildQueryRequestOptions(partitionKey, enableScanInQuery);
                 allDocuments = await GatewayFeedAndChangeFeedService.DrainIterator(
                     _container.GetItemQueryIterator<JToken>(queryDef, requestOptions: requestOptions),
                     cancellationToken);
@@ -151,6 +148,7 @@ internal sealed class GatewayQueryExecutionService
         CosmosSqlQuery parsed,
         JObject queryBody,
         PartitionKey? partitionKey,
+        bool enableScanInQuery,
         string orderByAlias,
         string payloadAlias,
         CancellationToken cancellationToken)
@@ -177,9 +175,7 @@ internal sealed class GatewayQueryExecutionService
         }
 
         var queryDef = BuildQueryDefinition(simplifiedSql, queryBody);
-        var requestOptions = partitionKey is not null
-            ? new QueryRequestOptions { PartitionKey = partitionKey }
-            : null;
+        var requestOptions = BuildQueryRequestOptions(partitionKey, enableScanInQuery);
         var feedIterator = _container.GetItemQueryIterator<JObject>(queryDef, requestOptions: requestOptions);
         var rawDocuments = new List<JObject>();
         while (feedIterator.HasMoreResults)
@@ -261,13 +257,12 @@ internal sealed class GatewayQueryExecutionService
         CosmosSqlQuery parsed,
         JObject queryBody,
         PartitionKey? partitionKey,
+        bool enableScanInQuery,
         CancellationToken cancellationToken)
     {
         var originalSql = GatewayOrderByQueryRewriter.ReconstructGroupByQuery(parsed);
         var queryDef = BuildQueryDefinition(originalSql, queryBody);
-        var requestOptions = partitionKey is not null
-            ? new QueryRequestOptions { PartitionKey = partitionKey }
-            : null;
+        var requestOptions = BuildQueryRequestOptions(partitionKey, enableScanInQuery);
         var rawResults = await GatewayFeedAndChangeFeedService.DrainIterator(
             _container.GetItemQueryIterator<JObject>(queryDef, requestOptions: requestOptions),
             cancellationToken);
@@ -354,5 +349,21 @@ internal sealed class GatewayQueryExecutionService
         }
 
         return queryDef;
+    }
+
+    private static QueryRequestOptions? BuildQueryRequestOptions(
+        PartitionKey? partitionKey,
+        bool enableScanInQuery)
+    {
+        if (partitionKey is null && !enableScanInQuery)
+        {
+            return null;
+        }
+
+        return new QueryRequestOptions
+        {
+            PartitionKey = partitionKey,
+            EnableScanInQuery = enableScanInQuery ? true : null
+        };
     }
 }

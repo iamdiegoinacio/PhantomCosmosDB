@@ -43,7 +43,12 @@ internal static class CosmosGatewayMetadataGenerator
         var collBytes = new byte[8];
         Buffer.BlockCopy(dbBytes, 0, collBytes, 0, 4);
         Buffer.BlockCopy(BitConverter.GetBytes(containerHash), 0, collBytes, 4, 4);
-        return (Convert.ToBase64String(dbBytes), Convert.ToBase64String(collBytes));
+        // Set DocumentCollection bit in ResourceId binary layout so ResourceId.Parse preserves DocumentCollectionId
+        collBytes[4] |= 0x80;
+        collBytes[7] &= 0x7F;
+        return (
+            Convert.ToBase64String(dbBytes).Replace('/', '-').Replace('+', '_'),
+            Convert.ToBase64String(collBytes).Replace('/', '-').Replace('+', '_'));
     }
 
     public static string GetDatabaseMetadata(string databaseName, string databaseRid)
@@ -207,11 +212,20 @@ internal static class CosmosGatewayMetadataGenerator
         return response;
     }
 
-    public static HttpResponseMessage HandleOffersRequest(
+    public static JObject BuildOfferJson(
         InMemoryContainer container,
+        string databaseRid,
         string collectionRid)
     {
-        var offer = new JObject
+        var offerHash = PartitionKeyHash.MurmurHash3(collectionRid);
+        var offerRid = Convert.ToBase64String(
+        [
+            (byte)((offerHash & 0xFF) | 1),
+            (byte)((offerHash >> 8) & 0xFF),
+            (byte)((offerHash >> 16) & 0xFF)
+        ]);
+
+        return new JObject
         {
             ["offerVersion"] = "V2",
             ["offerType"] = "Invalid",
@@ -220,19 +234,35 @@ internal static class CosmosGatewayMetadataGenerator
                 ["offerThroughput"] = container._throughput,
                 ["offerIsRUPerMinuteThroughputEnabled"] = false
             },
+            ["resource"] = $"dbs/{databaseRid}/colls/{collectionRid}/",
             ["offerResourceId"] = collectionRid,
-            ["id"] = "offer-" + collectionRid,
-            ["_rid"] = "offer-" + collectionRid,
-            ["_self"] = "offers/offer-" + collectionRid + "/",
+            ["id"] = offerRid,
+            ["_rid"] = offerRid,
+            ["_self"] = $"offers/{offerRid}/",
             ["_etag"] = $"\"{Guid.NewGuid()}\"",
             ["_ts"] = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
         };
+    }
 
+    public static HttpResponseMessage HandleOffersRequest(
+        InMemoryContainer container,
+        string databaseRid,
+        string collectionRid)
+        => CreateOffersResponse([BuildOfferJson(container, databaseRid, collectionRid)]);
+
+    public static HttpResponseMessage HandleOffersRequest(
+        InMemoryContainer container,
+        string collectionRid)
+        => CreateOffersResponse([BuildOfferJson(container, string.Empty, collectionRid)]);
+
+    public static HttpResponseMessage CreateOffersResponse(IEnumerable<JObject> offers)
+    {
+        var list = offers.ToList();
         var wrapper = new JObject
         {
             ["_rid"] = "",
-            ["Offers"] = new JArray(offer),
-            ["_count"] = 1
+            ["Offers"] = new JArray(list),
+            ["_count"] = list.Count
         };
 
         var response = new HttpResponseMessage(HttpStatusCode.OK)

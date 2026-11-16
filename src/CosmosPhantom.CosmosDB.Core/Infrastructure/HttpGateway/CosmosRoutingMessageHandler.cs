@@ -46,6 +46,77 @@ internal sealed class CosmosRoutingMessageHandler : HttpMessageHandler
             return await InvokeHandlerAsync(_default, request, cancellationToken);
         }
 
+        if (path.Contains("/offers", StringComparison.OrdinalIgnoreCase))
+        {
+            var offers = _registry.Handlers.Values
+                .Distinct()
+                .Select(h => h.GetOfferJsonInternal())
+                .ToList();
+
+            var offerIdMatch = Regex.Match(path, @"/offers/([^/]+)/?$", RegexOptions.IgnoreCase);
+            if (method == "GET" && offerIdMatch.Success)
+            {
+                var offerId = Uri.UnescapeDataString(offerIdMatch.Groups[1].Value);
+                var single = offers.FirstOrDefault(o =>
+                    string.Equals(o["id"]?.ToString(), offerId, StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(o["_rid"]?.ToString(), offerId, StringComparison.OrdinalIgnoreCase));
+                if (single is null)
+                {
+                    return CosmosHttpHeaders.CreateErrorResponse(
+                        HttpStatusCode.NotFound,
+                        $"Offer '{offerId}' not found.",
+                        0,
+                        _default.BackingInMemoryContainer.CurrentSessionToken);
+                }
+
+                return CosmosHttpHeaders.CreateJsonResponse(
+                    single.ToString(Formatting.None),
+                    _default.BackingInMemoryContainer.CurrentSessionToken);
+            }
+
+            if (method == "POST" && request.Content is not null)
+            {
+                var body = await request.Content.ReadAsStringAsync(cancellationToken);
+                if (!string.IsNullOrWhiteSpace(body))
+                {
+                    var queryObj = JObject.Parse(body);
+                    var sql = queryObj["query"]?.ToString();
+                    if (!string.IsNullOrWhiteSpace(sql))
+                    {
+                        var parameters = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+                        if (queryObj["parameters"] is JArray paramArr)
+                        {
+                            foreach (var p in paramArr)
+                            {
+                                var name = p["name"]?.ToString();
+                                if (name is not null)
+                                    parameters[name] = p["value"]?.ToObject<object?>();
+                            }
+                        }
+
+                        var matched = Application.Query.MetadataSqlQueryExecutor.Execute<JObject, JObject>(
+                            offers, sql, parameters);
+
+                        if (matched.Count == 0)
+                        {
+                            var searchHaystack = sql + " " + string.Join(" ", parameters.Values.Select(v => v?.ToString() ?? string.Empty));
+                            matched = offers
+                                .Where(o =>
+                                {
+                                    var rid = o["offerResourceId"]?.ToString();
+                                    return !string.IsNullOrEmpty(rid) && searchHaystack.Contains(rid, StringComparison.Ordinal);
+                                })
+                                .ToList();
+                        }
+
+                        offers = matched;
+                    }
+                }
+            }
+
+            return CosmosGatewayMetadataGenerator.CreateOffersResponse(offers);
+        }
+
         // Container creation: POST /dbs/{db}/colls
         // Container listing: GET /dbs/{db}/colls
         var collsMatch = Regex.Match(path, @"^/dbs/([^/]+)/colls/?$");
@@ -95,16 +166,10 @@ internal sealed class CosmosRoutingMessageHandler : HttpMessageHandler
                 }
             }
 
-            // Try database+container compound key first, then fall back to container-only
-            var compoundKey = $"{dbName}/{containerName}";
-            if (_registry.Handlers.TryGetValue(compoundKey, out var compoundHandler))
+            var resolvedKey = ResolveExistingRegistryKey(dbName, containerName);
+            if (resolvedKey is not null && _registry.Handlers.TryGetValue(resolvedKey, out var resolvedHandler))
             {
-                return await InvokeHandlerAsync(compoundHandler, request, cancellationToken);
-            }
-
-            if (_registry.Handlers.TryGetValue(containerName, out var handler))
-            {
-                return await InvokeHandlerAsync(handler, request, cancellationToken);
+                return await InvokeHandlerAsync(resolvedHandler, request, cancellationToken);
             }
 
             // SDK internal routes use base64-encoded RIDs (e.g. "AQAAAA==") for
@@ -368,6 +433,29 @@ internal sealed class CosmosRoutingMessageHandler : HttpMessageHandler
             return compoundKey;
         if (_registry.Handlers.ContainsKey(containerName))
             return containerName;
+
+        // Match by collection RID (e.g. "AQAAAA==") when SDK refreshes collection metadata by RID
+        var decoded = Uri.UnescapeDataString(containerName);
+        if (_registry.DatabaseContainerKeys.TryGetValue(dbName, out var dbMap))
+        {
+            foreach (var (_, registryKey) in dbMap)
+            {
+                if (_registry.Handlers.TryGetValue(registryKey, out var h) &&
+                    string.Equals(h.CollectionRidInternal, decoded, StringComparison.Ordinal))
+                {
+                    return registryKey;
+                }
+            }
+        }
+
+        foreach (var (registryKey, h) in _registry.Handlers)
+        {
+            if (string.Equals(h.CollectionRidInternal, decoded, StringComparison.Ordinal))
+            {
+                return registryKey;
+            }
+        }
+
         return null;
     }
 

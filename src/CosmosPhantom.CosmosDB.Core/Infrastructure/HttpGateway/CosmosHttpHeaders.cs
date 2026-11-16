@@ -282,6 +282,13 @@ internal static class CosmosHttpHeaders
         return null;
     }
 
+    public static bool ExtractEnableScanInQuery(HttpRequestMessage request)
+    {
+        return request.Headers.TryGetValues("x-ms-documentdb-query-enable-scan", out var values) &&
+               bool.TryParse(values.FirstOrDefault(), out var enabled) &&
+               enabled;
+    }
+
     public static (string Key, int Offset)? DecodeContinuation(HttpRequestMessage request)
     {
         if (!request.Headers.TryGetValues("x-ms-continuation", out var values))

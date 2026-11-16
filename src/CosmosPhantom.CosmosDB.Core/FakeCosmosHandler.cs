@@ -75,8 +75,13 @@ public class FakeCosmosHandler : HttpMessageHandler
 
     internal string DatabaseRidInternal => _databaseRid;
 
+    internal string CollectionRidInternal => _collectionRid;
+
     internal string GetCollectionMetadataInternal() =>
         CosmosGatewayMetadataGenerator.GetCollectionMetadata(_container, _databaseRid, _collectionRid);
+
+    internal JObject GetOfferJsonInternal() =>
+        CosmosGatewayMetadataGenerator.BuildOfferJson(_container, _databaseRid, _collectionRid);
 
     /// <summary>Recorded SQL query strings that were executed.</summary>
     public IReadOnlyCollection<string> QueryLog => _queryLog;
@@ -358,7 +363,7 @@ public class FakeCosmosHandler : HttpMessageHandler
 
         if (path.Contains("/offers"))
         {
-            return CosmosGatewayMetadataGenerator.HandleOffersRequest(_container, _collectionRid);
+            return CosmosGatewayMetadataGenerator.HandleOffersRequest(_container, _databaseRid, _collectionRid);
         }
 
         return new HttpResponseMessage(HttpStatusCode.NotFound)
