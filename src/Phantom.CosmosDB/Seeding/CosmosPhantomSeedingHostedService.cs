@@ -1,8 +1,10 @@
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Phantom.CosmosDB.ChaosEngineering;
 using Phantom.CosmosDB.Configuration;
+using Phantom.CosmosDB.Dashboard.State;
 using Phantom.CosmosDB.Seeding.Interfaces;
 
 namespace Phantom.CosmosDB.Seeding;
@@ -14,10 +16,14 @@ namespace Phantom.CosmosDB.Seeding;
 internal sealed class CosmosPhantomSeedingHostedService(
     ICosmosDbSeederService seederService,
     IHostEnvironment environment,
-    CosmosSeedingExecutionTracker tracker) : IHostedService
+    CosmosSeedingExecutionTracker tracker,
+    CosmosPhantomRuntimeRegistry runtimeRegistry,
+    ILogger<CosmosPhantomTelemetryHandler> telemetryLogger) : IHostedService
 {
     public async Task StartAsync(CancellationToken cancellationToken)
     {
+        runtimeRegistry.TelemetryLogger = telemetryLogger;
+
         if (!tracker.TryMarkExecuted())
             return;
 

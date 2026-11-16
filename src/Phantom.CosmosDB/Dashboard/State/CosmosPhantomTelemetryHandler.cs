@@ -6,22 +6,24 @@ using System.Net.Http;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
 using Newtonsoft.Json.Linq;
+using Phantom.CosmosDB.Cost;
 
 namespace Phantom.CosmosDB.Dashboard.State;
 
 /// <summary>
 /// Intercepta chamadas HTTP enviadas pelo Cosmos SDK para o <c>FakeCosmosHandler</c>
-/// e registra telemetria estruturada (status, substatus, RU, latência e SQL) no painel.
+/// e registra telemetria estruturada (status, substatus, RU, custo USD regional, latência e SQL).
 /// </summary>
 internal sealed class CosmosPhantomTelemetryHandler : DelegatingHandler
 {
-    private readonly CosmosPhantomTelemetryLog _log;
+    private readonly CosmosPhantomRuntimeRegistry _registry;
 
-    public CosmosPhantomTelemetryHandler(HttpMessageHandler innerHandler, CosmosPhantomTelemetryLog log)
+    public CosmosPhantomTelemetryHandler(HttpMessageHandler innerHandler, CosmosPhantomRuntimeRegistry registry)
         : base(innerHandler)
     {
-        _log = log;
+        _registry = registry;
     }
 
     protected override async Task<HttpResponseMessage> SendAsync(
@@ -44,16 +46,37 @@ internal sealed class CosmosPhantomTelemetryHandler : DelegatingHandler
                        string.Equals(ruVals.FirstOrDefault(), "0", StringComparison.Ordinal) &&
                        (int)response.StatusCode >= 400);
 
-        _log.Add(
+        var costOptions = _registry.LiveCostOptions;
+        var estimatedCostUsd = CosmosQueryCostSimulator.EstimateServerlessUsd(ru, costOptions);
+
+        _registry.TelemetryLog.Add(
             method,
             path,
             containerName,
             (int)response.StatusCode,
             subStatus,
             ru,
+            estimatedCostUsd,
+            costOptions.Region,
             sw.Elapsed.TotalMilliseconds,
             sqlQuery,
             isChaos);
+
+        if (costOptions.LogQueryCost &&
+            _registry.TelemetryLogger is { } logger &&
+            (sqlQuery != null || path.Contains("/docs", StringComparison.OrdinalIgnoreCase)))
+        {
+            logger.LogInformation(
+                "[PhantomDB Cost] {Method} {Path} | Status={StatusCode} | RU={RequestCharge:F2} | EstServerless={EstimatedCostUsd:F8} USD ({Region}) | Duration={DurationMs:F2}ms{SqlSuffix}",
+                method,
+                path,
+                (int)response.StatusCode,
+                ru,
+                estimatedCostUsd,
+                costOptions.Region,
+                sw.Elapsed.TotalMilliseconds,
+                sqlQuery is not null ? $" | SQL={sqlQuery}" : string.Empty);
+        }
 
         return response;
     }
