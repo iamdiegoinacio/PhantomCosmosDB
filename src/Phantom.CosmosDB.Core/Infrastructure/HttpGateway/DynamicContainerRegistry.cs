@@ -1,6 +1,7 @@
 #nullable enable
 using System.Collections.Concurrent;
 using Microsoft.Azure.Cosmos;
+using Phantom.CosmosDB.Core.Application.Contracts;
 
 namespace Phantom.CosmosDB.Core.Infrastructure.HttpGateway;
 
@@ -8,7 +9,7 @@ namespace Phantom.CosmosDB.Core.Infrastructure.HttpGateway;
 /// Shared registry for dynamic container management. Holds the mutable dictionaries
 /// that both <see cref="CosmosRoutingMessageHandler"/> and <see cref="InMemoryCosmosResult"/> reference.
 /// </summary>
-internal sealed class DynamicContainerRegistry
+internal sealed class DynamicContainerRegistry : IDynamicContainerRegistry
 {
     public ConcurrentDictionary<string, FakeCosmosHandler> Handlers { get; } = new(StringComparer.Ordinal);
     public ConcurrentDictionary<string, InMemoryContainer> BackingContainers { get; } = new(StringComparer.Ordinal);

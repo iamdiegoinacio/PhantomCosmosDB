@@ -1,6 +1,5 @@
 #nullable enable
 using Phantom.CosmosDB.Core.Application.Configuration;
-using Phantom.CosmosDB.Core.Infrastructure.HttpGateway;
 using Microsoft.Azure.Cosmos;
 
 namespace Phantom.CosmosDB.Core;
@@ -121,10 +120,8 @@ public sealed class InMemoryCosmosBuilder
         if (totalContainers == 0)
             throw new InvalidOperationException("At least one container must be added before calling Build().");
 
-        var registry = new DynamicContainerRegistry
-        {
-            DatabaseName = InMemoryCosmos.DefaultDatabaseName
-        };
+        var registry = CorePortDefaults.CreateRegistry();
+        registry.DatabaseName = InMemoryCosmos.DefaultDatabaseName;
 
         var handlers = new Dictionary<string, FakeCosmosHandler>(StringComparer.Ordinal);
         var configureCallbacks = new List<(string RegistryKey, Action<IContainerTestSetup>? Configure)>();
@@ -163,7 +160,7 @@ public sealed class InMemoryCosmosBuilder
             }
         }
 
-        HttpMessageHandler httpHandler = new CosmosRoutingMessageHandler(handlers, registry);
+        HttpMessageHandler httpHandler = CorePortDefaults.GatewayClients.CreateRoutingHandler(handlers, registry);
 
         foreach (var wrapper in _wrapHandlers)
             httpHandler = wrapper(httpHandler);

@@ -1,13 +1,11 @@
 #nullable enable
 using System.Net;
+using Phantom.CosmosDB.Core.Application.Contracts;
 using Phantom.CosmosDB.Core.Domain.Primitives;
 using Phantom.CosmosDB.Core.Domain.Validation;
-using Phantom.CosmosDB.Core.Infrastructure.SdkInterop;
-using Phantom.CosmosDB.Core.Infrastructure.Storage;
 using Microsoft.Azure.Cosmos;
 using Newtonsoft.Json;
 using static Phantom.CosmosDB.Core.Domain.Primitives.ContainerConstants;
-using CosmosResponseFactory = Phantom.CosmosDB.Core.Infrastructure.SdkInterop.CosmosResponseFactory;
 
 namespace Phantom.CosmosDB.Core.Application.Account;
 
@@ -18,7 +16,7 @@ internal static class ContainerLifecycleService
 {
     public static Task<ContainerResponse> ReadContainerAsync(
         InMemoryContainer container,
-        InMemoryItemStore store,
+        IDocumentStore store,
         ContainerProperties properties,
         JsonSerializerSettings jsonSettings,
         CancellationToken cancellationToken)
@@ -37,12 +35,12 @@ internal static class ContainerLifecycleService
 
         properties.IndexingPolicy = container.IndexingPolicy;
         properties.DefaultTimeToLive = container.DefaultTimeToLive;
-        return Task.FromResult(CosmosResponseFactory.CreateContainerResponse(container, properties, HttpStatusCode.OK));
+        return Task.FromResult(CorePortDefaults.SdkMapper.CreateContainerResponse(container, properties, HttpStatusCode.OK));
     }
 
     public static Task<ResponseMessage> ReadContainerStreamAsync(
         InMemoryContainer container,
-        InMemoryItemStore store,
+        IDocumentStore store,
         ContainerProperties properties,
         JsonSerializerSettings jsonSettings,
         CancellationToken cancellationToken)
@@ -88,7 +86,7 @@ internal static class ContainerLifecycleService
     {
         DocumentValidator.ValidateThroughput(throughput, isAutoscale: false);
         container._throughput = throughput;
-        return Task.FromResult(CosmosResponseFactory.CreateThroughputResponse(
+        return Task.FromResult(CorePortDefaults.SdkMapper.CreateThroughputResponse(
             ThroughputProperties.CreateManualThroughput(throughput)));
     }
 
@@ -107,6 +105,6 @@ internal static class ContainerLifecycleService
             container._throughput = throughputProperties.Throughput.Value;
         }
 
-        return Task.FromResult(CosmosResponseFactory.CreateThroughputResponse(throughputProperties));
+        return Task.FromResult(CorePortDefaults.SdkMapper.CreateThroughputResponse(throughputProperties));
     }
 }

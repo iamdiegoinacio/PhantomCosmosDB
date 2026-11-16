@@ -1,16 +1,38 @@
 #nullable enable
-using Phantom.CosmosDB.Core.Domain.Primitives;
 using Newtonsoft.Json.Linq;
+using Phantom.CosmosDB.Core.Domain.Primitives;
 
 namespace Phantom.CosmosDB.Core.Application.Query.Functions;
 
 /// <summary>
-/// Evaluates Cosmos SQL type-checking functions (<c>IS_DEFINED</c>, <c>IS_NULL</c>, <c>IS_ARRAY</c>,
-/// <c>IS_BOOL</c>, <c>IS_NUMBER</c>, <c>IS_STRING</c>, <c>IS_OBJECT</c>, <c>IS_PRIMITIVE</c>,
-/// <c>IS_FINITE_NUMBER</c>, <c>IS_INTEGER</c>, <c>IS_NAN</c>, and <c>TYPE</c>).
+/// Evaluates Cosmos SQL type-checking functions via a declarative registry.
 /// </summary>
 internal static class TypeCheckFunctions
 {
+    private delegate object? TypeCheckHandler(
+        FunctionCallExpression func,
+        object?[] args,
+        JObject item,
+        string fromAlias,
+        IDictionary<string, object?> parameters);
+
+    private static readonly IReadOnlyDictionary<string, TypeCheckHandler> Registry =
+        new Dictionary<string, TypeCheckHandler>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["IS_DEFINED"] = (f, a, i, alias, p) => IsDefined(f, a, i, alias, p),
+            ["IS_NULL"] = (_, a, _, _, _) => a.Length > 0 && a[0] is null,
+            ["IS_ARRAY"] = (f, a, i, alias, _) => a.Length > 0 && (ResolveTokenType(f.Arguments, i, alias) is JArray || a[0] is JArray),
+            ["IS_BOOL"] = (_, a, _, _, _) => a.Length > 0 && a[0] is bool,
+            ["IS_NUMBER"] = (_, a, _, _, _) => a.Length > 0 && a[0] is long or double or int or float or decimal,
+            ["IS_STRING"] = (_, a, _, _, _) => a.Length > 0 && a[0] is string,
+            ["IS_OBJECT"] = (f, a, i, alias, _) => a.Length > 0 && (ResolveTokenType(f.Arguments, i, alias) is JObject || a[0] is JObject),
+            ["IS_PRIMITIVE"] = (f, a, i, alias, _) => IsPrimitive(f, a, i, alias),
+            ["IS_FINITE_NUMBER"] = (_, a, _, _, _) => IsFiniteNumber(a),
+            ["IS_INTEGER"] = (_, a, _, _, _) => a.Length > 0 && a[0] is long or int,
+            ["IS_NAN"] = (_, a, _, _, _) => a.Length > 0 && a[0] is double d && double.IsNaN(d),
+            ["TYPE"] = (f, a, i, alias, _) => GetCosmosTypeName(f, a, i, alias)
+        };
+
     public static bool TryEvaluate(
         FunctionCallExpression func,
         object?[] args,
@@ -19,163 +41,76 @@ internal static class TypeCheckFunctions
         IDictionary<string, object?> parameters,
         out object? result)
     {
-        switch (func.FunctionName)
+        if (Registry.TryGetValue(func.FunctionName, out var handler))
         {
-            case "IS_DEFINED":
-                if (func.Arguments.Length < 1)
-                {
-                    result = false;
-                    return true;
-                }
-
-                if (func.Arguments[0] is IdentifierExpression ident)
-                {
-                    var path = ident.Name;
-                    if (path.StartsWith(fromAlias + ".", StringComparison.OrdinalIgnoreCase))
-                    {
-                        path = path[(fromAlias.Length + 1)..];
-                    }
-
-                    result = item.SelectToken(path) != null;
-                    return true;
-                }
-
-                if (func.Arguments[0] is ParameterExpression param)
-                {
-                    result = parameters.ContainsKey(param.Name);
-                    return true;
-                }
-
-                result = args[0] != null;
-                return true;
-
-            case "IS_NULL":
-                result = args.Length > 0 && args[0] is null;
-                return true;
-
-            case "IS_ARRAY":
-                result = args.Length > 0 && (ResolveTokenType(func.Arguments, item, fromAlias) is JArray || args[0] is JArray);
-                return true;
-
-            case "IS_BOOL":
-                result = args.Length > 0 && args[0] is bool;
-                return true;
-
-            case "IS_NUMBER":
-                result = args.Length > 0 && args[0] is long or double or int or float or decimal;
-                return true;
-
-            case "IS_STRING":
-                result = args.Length > 0 && args[0] is string;
-                return true;
-
-            case "IS_OBJECT":
-                result = args.Length > 0 && (ResolveTokenType(func.Arguments, item, fromAlias) is JObject || args[0] is JObject);
-                return true;
-
-            case "IS_PRIMITIVE":
-                if (args.Length == 0)
-                {
-                    result = false;
-                    return true;
-                }
-
-                if (args[0] is null)
-                {
-                    result = true;
-                    return true;
-                }
-
-                var tokenForPrimitive = ResolveTokenType(func.Arguments, item, fromAlias);
-                if (tokenForPrimitive is JArray or JObject)
-                {
-                    result = false;
-                    return true;
-                }
-
-                result = args[0] is string or bool or long or double;
-                return true;
-
-            case "IS_FINITE_NUMBER":
-                if (args.Length == 0)
-                {
-                    result = false;
-                    return true;
-                }
-
-                result = args[0] switch
-                {
-                    long => true,
-                    int => true,
-                    double d => !double.IsInfinity(d) && !double.IsNaN(d),
-                    float f => !float.IsInfinity(f) && !float.IsNaN(f),
-                    decimal => true,
-                    _ => false,
-                };
-                return true;
-
-            case "IS_INTEGER":
-                result = args.Length > 0 && args[0] is long or int;
-                return true;
-
-            case "IS_NAN":
-                result = args.Length > 0 && args[0] is double dNan && double.IsNaN(dNan);
-                return true;
-
-            case "TYPE":
-                if (args.Length == 0 || args[0] is UndefinedValue)
-                {
-                    result = UndefinedValue.Instance;
-                    return true;
-                }
-
-                var tokenForType = ResolveTokenType(func.Arguments, item, fromAlias);
-                if (tokenForType is JArray)
-                {
-                    result = "array";
-                    return true;
-                }
-
-                if (tokenForType is JObject)
-                {
-                    result = "object";
-                    return true;
-                }
-
-                result = args[0] switch
-                {
-                    null => "null",
-                    bool => "boolean",
-                    long or int or double or float or decimal => "number",
-                    string => "string",
-                    _ => "undefined"
-                };
-                return true;
-
-            default:
-                result = null;
-                return false;
+            result = handler(func, args, item, fromAlias, parameters);
+            return true;
         }
+
+        result = null;
+        return false;
     }
 
     public static JToken? ResolveTokenType(SqlExpression[] arguments, JObject item, string fromAlias)
     {
-        if (arguments.Length < 1)
-        {
+        if (arguments.Length < 1 || arguments[0] is not IdentifierExpression ident)
             return null;
-        }
 
-        if (arguments[0] is IdentifierExpression ident)
+        var path = ident.Name;
+        if (path.StartsWith(fromAlias + ".", StringComparison.OrdinalIgnoreCase))
+            path = path[(fromAlias.Length + 1)..];
+
+        return item.SelectToken(path);
+    }
+
+    private static bool IsDefined(
+        FunctionCallExpression func,
+        object?[] args,
+        JObject item,
+        string fromAlias,
+        IDictionary<string, object?> parameters)
+    {
+        if (func.Arguments.Length < 1) return false;
+        if (func.Arguments[0] is IdentifierExpression) return ResolveTokenType(func.Arguments, item, fromAlias) != null;
+        if (func.Arguments[0] is ParameterExpression param) return parameters.ContainsKey(param.Name);
+        return args[0] != null;
+    }
+
+    private static bool IsPrimitive(FunctionCallExpression func, object?[] args, JObject item, string fromAlias)
+    {
+        if (args.Length == 0) return false;
+        if (args[0] is null) return true;
+        if (ResolveTokenType(func.Arguments, item, fromAlias) is JArray or JObject) return false;
+        return args[0] is string or bool or long or double;
+    }
+
+    private static bool IsFiniteNumber(object?[] args)
+    {
+        if (args.Length == 0) return false;
+        return args[0] switch
         {
-            var path = ident.Name;
-            if (path.StartsWith(fromAlias + ".", StringComparison.OrdinalIgnoreCase))
-            {
-                path = path[(fromAlias.Length + 1)..];
-            }
+            long or int or decimal => true,
+            double d => !double.IsInfinity(d) && !double.IsNaN(d),
+            float f => !float.IsInfinity(f) && !float.IsNaN(f),
+            _ => false
+        };
+    }
 
-            return item.SelectToken(path);
-        }
+    private static object GetCosmosTypeName(FunctionCallExpression func, object?[] args, JObject item, string fromAlias)
+    {
+        if (args.Length == 0 || args[0] is UndefinedValue) return UndefinedValue.Instance;
 
-        return null;
+        var token = ResolveTokenType(func.Arguments, item, fromAlias);
+        if (token is JArray) return "array";
+        if (token is JObject) return "object";
+
+        return args[0] switch
+        {
+            null => "null",
+            bool => "boolean",
+            long or int or double or float or decimal => "number",
+            string => "string",
+            _ => "undefined"
+        };
     }
 }

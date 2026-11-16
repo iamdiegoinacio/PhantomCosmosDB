@@ -1,10 +1,7 @@
 #nullable enable
 using Phantom.CosmosDB.Core.Domain.Validation;
-using Phantom.CosmosDB.Core.Infrastructure.FeedIterators;
-using Phantom.CosmosDB.Core.Infrastructure.SdkInterop;
 using Microsoft.Azure.Cosmos;
 using Newtonsoft.Json;
-using CosmosResponseFactory = Phantom.CosmosDB.Core.Infrastructure.SdkInterop.CosmosResponseFactory;
 
 namespace Phantom.CosmosDB.Core.Application.Query;
 
@@ -21,15 +18,16 @@ internal static class ContainerQueryIteratorFactory
         JsonSerializerSettings jsonSettings)
     {
         DocumentValidator.ValidateMaxItemCount(requestOptions);
-        var parameters = CosmosSdkIntrospector.ExtractQueryParameters(queryDefinition);
+        var parameters = CorePortDefaults.SdkMapper.ExtractQueryParameters(queryDefinition);
         var filtered = CosmosQueryPipeline.ExecuteSafe(() => filterByQuery(queryDefinition.QueryText, parameters, requestOptions, null));
         var items = filtered.Select(json => JsonConvert.DeserializeObject<T>(json, jsonSettings)!).ToList();
         var initialOffset = DocumentValidator.ParseContinuationToken(continuationToken);
-        return new InMemoryFeedIterator<T>(items, requestOptions?.MaxItemCount, initialOffset)
-        {
-            PopulateIndexMetrics = requestOptions?.PopulateIndexMetrics ?? false,
-            GuaranteeFirstPage = true
-        };
+        return CorePortDefaults.FeedIterators.CreateTyped(
+            items,
+            requestOptions?.MaxItemCount,
+            initialOffset,
+            populateIndexMetrics: requestOptions?.PopulateIndexMetrics ?? false,
+            guaranteeFirstPage: true);
     }
 
     public static FeedIterator<T> CreateTypedIterator<T>(
@@ -55,11 +53,12 @@ internal static class ContainerQueryIteratorFactory
         }
 
         var initialOffset = DocumentValidator.ParseContinuationToken(continuationToken);
-        return new InMemoryFeedIterator<T>(items, requestOptions?.MaxItemCount, initialOffset)
-        {
-            PopulateIndexMetrics = requestOptions?.PopulateIndexMetrics ?? false,
-            GuaranteeFirstPage = true
-        };
+        return CorePortDefaults.FeedIterators.CreateTyped(
+            items,
+            requestOptions?.MaxItemCount,
+            initialOffset,
+            populateIndexMetrics: requestOptions?.PopulateIndexMetrics ?? false,
+            guaranteeFirstPage: true);
     }
 
     public static FeedIterator<T> CreateTypedFeedRangeIterator<T>(
@@ -73,18 +72,19 @@ internal static class ContainerQueryIteratorFactory
         JsonSerializerSettings jsonSettings)
     {
         DocumentValidator.ValidateMaxItemCount(requestOptions);
-        var parameters = CosmosSdkIntrospector.ExtractQueryParameters(queryDefinition);
-        var preFiltered = FeedRangeCalculator.FilterByFeedRange(
+        var parameters = CorePortDefaults.SdkMapper.ExtractQueryParameters(queryDefinition);
+        var preFiltered = CorePortDefaults.SdkMapper.FilterByFeedRange(
             getAllItemsForPartition(requestOptions).ToList(), feedRange, partitionKeyPaths, jsonSettings);
         var filtered = CosmosQueryPipeline.ExecuteSafe(
             () => filterByQuery(queryDefinition.QueryText, parameters, requestOptions, preFiltered));
         var items = filtered.Select(json => JsonConvert.DeserializeObject<T>(json, jsonSettings)!).ToList();
         var initialOffset = DocumentValidator.ParseContinuationToken(continuationToken);
-        return new InMemoryFeedIterator<T>(items, requestOptions?.MaxItemCount, initialOffset)
-        {
-            PopulateIndexMetrics = requestOptions?.PopulateIndexMetrics ?? false,
-            GuaranteeFirstPage = true
-        };
+        return CorePortDefaults.FeedIterators.CreateTyped(
+            items,
+            requestOptions?.MaxItemCount,
+            initialOffset,
+            populateIndexMetrics: requestOptions?.PopulateIndexMetrics ?? false,
+            guaranteeFirstPage: true);
     }
 
     public static FeedIterator CreateStreamIterator(
@@ -94,10 +94,10 @@ internal static class ContainerQueryIteratorFactory
         Func<string, IDictionary<string, object?>, QueryRequestOptions?, IEnumerable<string>?, List<string>> filterByQuery,
         Func<string> getSessionToken)
     {
-        var parameters = CosmosSdkIntrospector.ExtractQueryParameters(queryDefinition);
+        var parameters = CorePortDefaults.SdkMapper.ExtractQueryParameters(queryDefinition);
         var filtered = CosmosQueryPipeline.ExecuteSafe(
             () => filterByQuery(queryDefinition.QueryText, parameters, requestOptions, null));
-        return CosmosResponseFactory.CreateStreamFeedIterator(
+        return CorePortDefaults.FeedIterators.CreateQueryStream(
             filtered, getSessionToken, DocumentValidator.ParseContinuationToken(continuationToken), requestOptions?.MaxItemCount);
     }
 
@@ -112,11 +112,11 @@ internal static class ContainerQueryIteratorFactory
         var offset = DocumentValidator.ParseContinuationToken(continuationToken);
         if (string.IsNullOrEmpty(queryText))
         {
-            return CosmosResponseFactory.CreateStreamFeedIterator(
+            return CorePortDefaults.FeedIterators.CreateQueryStream(
                 getAllItemsForPartition(requestOptions).ToList(), getSessionToken, offset, requestOptions?.MaxItemCount);
         }
 
-        return CosmosResponseFactory.CreateStreamFeedIterator(
+        return CorePortDefaults.FeedIterators.CreateQueryStream(
             CosmosQueryPipeline.ExecuteSafe(() => filterByQuery(queryText, new Dictionary<string, object?>(), requestOptions, null)),
             getSessionToken, offset, requestOptions?.MaxItemCount);
     }
@@ -132,12 +132,12 @@ internal static class ContainerQueryIteratorFactory
         JsonSerializerSettings jsonSettings,
         Func<string> getSessionToken)
     {
-        var parameters = CosmosSdkIntrospector.ExtractQueryParameters(queryDefinition);
-        var preFiltered = FeedRangeCalculator.FilterByFeedRange(
+        var parameters = CorePortDefaults.SdkMapper.ExtractQueryParameters(queryDefinition);
+        var preFiltered = CorePortDefaults.SdkMapper.FilterByFeedRange(
             getAllItemsForPartition(requestOptions).ToList(), feedRange, partitionKeyPaths, jsonSettings);
         var filtered = CosmosQueryPipeline.ExecuteSafe(
             () => filterByQuery(queryDefinition.QueryText, parameters, requestOptions, preFiltered));
-        return CosmosResponseFactory.CreateStreamFeedIterator(
+        return CorePortDefaults.FeedIterators.CreateQueryStream(
             filtered, getSessionToken, DocumentValidator.ParseContinuationToken(continuationToken), requestOptions?.MaxItemCount);
     }
 }

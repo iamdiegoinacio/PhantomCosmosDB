@@ -39,6 +39,29 @@ public sealed class ArchitectureFitnessTests
         }
     }
 
+    [Fact]
+    public void ApplicationLayer_ShouldNotDependOnInfrastructure()
+    {
+        var applicationTypes = CoreAssembly.GetTypes()
+            .Where(t => t.Namespace is not null &&
+                        t.Namespace.StartsWith("Phantom.CosmosDB.Core.Application", StringComparison.Ordinal))
+            .ToList();
+
+        Assert.NotEmpty(applicationTypes);
+
+        foreach (var type in applicationTypes)
+        {
+            var referencedTypes = GetDirectlyReferencedTypes(type);
+            var violations = referencedTypes
+                .Where(rt => rt.Namespace is not null &&
+                             rt.Namespace.StartsWith("Phantom.CosmosDB.Core.Infrastructure", StringComparison.Ordinal))
+                .Select(rt => $"{type.FullName} -> {rt.FullName}")
+                .ToList();
+
+            Assert.True(violations.Count == 0, $"Application dependency violation(s): {string.Join("; ", violations)}");
+        }
+    }
+
     private static Type[] GetDirectlyReferencedTypes(Type type)
     {
         const BindingFlags Flags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static | BindingFlags.DeclaredOnly;

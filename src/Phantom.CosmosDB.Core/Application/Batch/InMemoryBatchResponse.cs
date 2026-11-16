@@ -2,7 +2,6 @@
 using System.Globalization;
 using System.Net;
 using System.Text;
-using Phantom.CosmosDB.Core.Infrastructure.FeedIterators;
 using Microsoft.Azure.Cosmos;
 using Newtonsoft.Json;
 using NSubstitute;
@@ -61,7 +60,7 @@ internal sealed class InMemoryBatchResponse : TransactionalBatchResponse
     public override int Count => _operationResults.Count;
     public override double RequestCharge => 1d;
     public override string ActivityId { get; } = Guid.NewGuid().ToString();
-    public override CosmosDiagnostics Diagnostics => InMemoryFeedDiagnostics.Instance;
+    public override CosmosDiagnostics Diagnostics => CorePortDefaults.SdkMapper.DefaultDiagnostics;
     public override Headers Headers => _headers;
     public override string? ErrorMessage => _errorMessage;
     public override TimeSpan? RetryAfter => TimeSpan.Zero;

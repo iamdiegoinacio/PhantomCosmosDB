@@ -1,6 +1,7 @@
 #nullable enable
 using System.Collections.Concurrent;
 using System.Net;
+using Phantom.CosmosDB.Core.Application.Contracts;
 using Phantom.CosmosDB.Core.Domain.Validation;
 using Microsoft.Azure.Cosmos;
 using Newtonsoft.Json;
@@ -14,7 +15,7 @@ namespace Phantom.CosmosDB.Core.Infrastructure.Storage;
 /// per-item concurrency locks, TTL evaluation/eviction, ETag precondition checks, and
 /// transactional batch snapshots.
 /// </summary>
-internal sealed class InMemoryItemStore
+internal sealed class InMemoryItemStore : IDocumentStore
 {
     private static int _docRidCounter;
     private static readonly AsyncLocal<HashSet<(string Id, string PartitionKey)>?> BatchWriteTracker = new();
@@ -115,7 +116,7 @@ internal sealed class InMemoryItemStore
         (string Id, string PartitionKey) key,
         int? defaultTimeToLive,
         IReadOnlyList<string> partitionKeyPaths,
-        InMemoryChangeFeedLog changeFeedLog)
+        IChangeFeedLog? changeFeedLog)
     {
         if (!IsExpired(key, defaultTimeToLive))
         {
@@ -128,8 +129,14 @@ internal sealed class InMemoryItemStore
         RemoveInsertionOrder(key);
 
         // Record a delete tombstone in the change feed so consumers see TTL evictions
-        changeFeedLog.RecordDeleteTombstone(key.Id, key.PartitionKey, partitionKeyPaths, isTtlEviction: true);
+        changeFeedLog?.RecordDeleteTombstone(key.Id, key.PartitionKey, partitionKeyPaths, isTtlEviction: true);
     }
+
+    public string EnrichSystemProperties(string containerId, string json, string etag, DateTimeOffset timestamp)
+        => EnrichWithSystemProperties(containerId, json, etag, timestamp);
+
+    public void TrackWrite((string Id, string PartitionKey) key)
+        => TrackBatchWrite(key);
 
     public static string EnrichWithSystemProperties(
         string containerId, string json, string etag, DateTimeOffset timestamp)
@@ -312,7 +319,7 @@ internal sealed class InMemoryItemStore
         Dictionary<(string Id, string PartitionKey), DateTimeOffset> timestampsSnapshot,
         int changeFeedCount,
         IReadOnlySet<(string Id, string PartitionKey)> touchedKeys,
-        InMemoryChangeFeedLog changeFeedLog)
+        IChangeFeedLog changeFeedLog)
     {
         foreach (var key in touchedKeys)
         {

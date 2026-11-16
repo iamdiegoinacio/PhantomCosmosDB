@@ -1,7 +1,7 @@
 #nullable enable
 using System.Collections.ObjectModel;
+using Phantom.CosmosDB.Core.Application.Contracts;
 using Phantom.CosmosDB.Core.Application.Results;
-using Phantom.CosmosDB.Core.Infrastructure.HttpGateway;
 using Microsoft.Azure.Cosmos;
 
 namespace Phantom.CosmosDB.Core;
@@ -13,12 +13,12 @@ namespace Phantom.CosmosDB.Core;
 /// </summary>
 public sealed class InMemoryCosmosResult : IDisposable, IAsyncDisposable
 {
-    private readonly DynamicContainerRegistry _registry;
+    private readonly IDynamicContainerRegistry _registry;
     private readonly string? _singleContainerName;
 
     internal InMemoryCosmosResult(
         CosmosClient client,
-        DynamicContainerRegistry registry,
+        IDynamicContainerRegistry registry,
         string? singleContainerName)
     {
         Client = client;
