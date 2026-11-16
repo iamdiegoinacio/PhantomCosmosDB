@@ -9,7 +9,8 @@ namespace PhantomDashboard.Features {
 
     public constructor(
       private readonly api: DashboardApiClient,
-      private readonly onRefreshDependents: () => Promise<void>
+      private readonly onRefreshDependents: () => Promise<void>,
+      private readonly onOverviewLoaded?: (ov: OverviewPayload) => void
     ) {}
 
     public get currentOverview(): OverviewPayload | null {
@@ -36,7 +37,12 @@ namespace PhantomDashboard.Features {
       chaosPill.textContent = ov.chaosActive ? "Chaos: ATIVO" : "Chaos: Desligado";
       chaosPill.className = ov.chaosActive ? "pill chaos" : "pill";
 
+      byId<HTMLInputElement>("qs-db").value = ov.databaseName;
+      byId("sb-left").textContent =
+        `${ov.databaseName} | ${ov.containerCount} Containers | ${ov.totalItems} Itens | Região: ${ov.activeRegion.regionName} | Chaos: ${ov.chaosActive ? "ON" : "Off"}`;
+
       this.renderContainers(ov);
+      this.onOverviewLoaded?.(ov);
     }
 
     public async resetSeed(): Promise<void> {
