@@ -9,7 +9,37 @@ public static class ContainerConfigExtensions
 {
     public static ContainerProperties ToContainerProperties(this ContainerConfig containerConfig)
     {
-        var containerProperties = new ContainerProperties(containerConfig.Name, containerConfig.PartitionKeyPath);
+        var pkPaths = containerConfig.GetPartitionKeyPaths();
+        var containerProperties = pkPaths.Count > 1
+            ? new ContainerProperties(containerConfig.Name, pkPaths.ToList())
+            : new ContainerProperties(containerConfig.Name, pkPaths[0]);
+
+        containerProperties.DefaultTimeToLive = containerConfig.DefaultTimeToLive;
+
+        if (containerConfig.UniqueKeys is { Count: > 0 })
+        {
+            foreach (var keyPaths in containerConfig.UniqueKeys)
+            {
+                var uniqueKey = new UniqueKey();
+                foreach (var p in keyPaths)
+                {
+                    uniqueKey.Paths.Add(p);
+                }
+                containerProperties.UniqueKeyPolicy.UniqueKeys.Add(uniqueKey);
+            }
+        }
+
+        if (containerConfig.ComputedProperties is { Count: > 0 })
+        {
+            foreach (var cp in containerConfig.ComputedProperties)
+            {
+                containerProperties.ComputedProperties.Add(new ComputedProperty
+                {
+                    Name = cp.Name,
+                    Query = cp.Query
+                });
+            }
+        }
 
         if (containerConfig.IndexingPolicy != null)
         {
