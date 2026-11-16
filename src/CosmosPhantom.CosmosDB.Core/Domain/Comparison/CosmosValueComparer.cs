@@ -44,13 +44,9 @@ internal static class CosmosValueComparer
             return false;
         }
 
-        if ((left is double or long) && (right is double or long))
+        if ((left is double or long or int or decimal or float) && (right is double or long or int or decimal or float))
         {
-            if (double.TryParse(left.ToString(), NumberStyles.Any, CultureInfo.InvariantCulture, out var l) &&
-                double.TryParse(right.ToString(), NumberStyles.Any, CultureInfo.InvariantCulture, out var r))
-            {
-                return l == r;
-            }
+            return ToInvariantDouble(left) == ToInvariantDouble(right);
         }
 
         var leftJ = left is JToken ? left : NormalizeToJTokenIfComplex(left);
@@ -106,14 +102,13 @@ internal static class CosmosValueComparer
 
         if (leftRank <= 1) return 0;
 
+        if (leftRank == 3 && rightRank == 3)
+        {
+            return ToInvariantDouble(left).CompareTo(ToInvariantDouble(right));
+        }
+
         if (left is bool lb && right is bool rb)
             return lb.CompareTo(rb);
-
-        if (double.TryParse(left?.ToString(), NumberStyles.Any, CultureInfo.InvariantCulture, out var l) &&
-            double.TryParse(right?.ToString(), NumberStyles.Any, CultureInfo.InvariantCulture, out var r))
-        {
-            return l.CompareTo(r);
-        }
 
         if (leftRank == 5)
         {
@@ -155,6 +150,17 @@ internal static class CosmosValueComparer
 
         return string.Compare(left?.ToString(), right?.ToString(), StringComparison.Ordinal);
     }
+
+    private static double ToInvariantDouble(object? value) => value switch
+    {
+        double d => d,
+        float f => f,
+        long l => l,
+        int i => i,
+        decimal dec => (double)dec,
+        JValue jv => jv.Value<double>(),
+        _ => Convert.ToDouble(value, CultureInfo.InvariantCulture)
+    };
 
     public static object? JTokenToObject(JToken token)
     {

@@ -43,7 +43,7 @@ internal sealed class GatewayFeedAndChangeFeedService
     {
         if (CosmosHttpHeaders.IsChangeFeedRequest(request))
         {
-            return await HandleChangeFeedAsync(request);
+            return HandleChangeFeed(request);
         }
 
         var maxItemCount = CosmosHttpHeaders.ExtractMaxItemCount(request);
@@ -82,7 +82,7 @@ internal sealed class GatewayFeedAndChangeFeedService
         return BuildPagedResponse(allDocuments, offset, maxItemCount, cacheKey);
     }
 
-    public async Task<HttpResponseMessage> HandleChangeFeedAsync(HttpRequestMessage request)
+    public HttpResponseMessage HandleChangeFeed(HttpRequestMessage request)
     {
         var maxItemCount = CosmosHttpHeaders.ExtractMaxItemCount(request);
         var rangeId = CosmosHttpHeaders.ExtractPartitionKeyRangeId(request);
@@ -98,26 +98,27 @@ internal sealed class GatewayFeedAndChangeFeedService
             }
         }
 
-        var iterator = _container.GetChangeFeedIterator<JObject>(checkpoint);
         var allChanges = new List<JObject>();
+        var rawEntries = _container.GetChangeFeedEntries();
+        var startIndex = (int)Math.Min(checkpoint, int.MaxValue);
+
         if (CosmosHttpHeaders.IsFullFidelityChangeFeedRequest(request))
         {
-            var envelopes = FullFidelityChangeFeedProjector.Project(
-                _container.GetChangeFeedEntries(), (int)Math.Min(checkpoint, int.MaxValue));
+            var envelopes = FullFidelityChangeFeedProjector.Project(rawEntries, startIndex);
             allChanges.AddRange(envelopes);
         }
         else
         {
-            while (iterator.HasMoreResults)
-            {
-                var page = await iterator.ReadNextAsync();
-                if (page.StatusCode == HttpStatusCode.NotModified)
-                    break;
-                allChanges.AddRange(page);
-            }
+            var incrementalEntries = rawEntries
+                .Skip(startIndex)
+                .GroupBy(entry => (entry.Id, entry.PartitionKey))
+                .Select(group => group.Last())
+                .Where(entry => !entry.IsDelete)
+                .Select(entry => JObject.Parse(entry.Json));
+            allChanges.AddRange(incrementalEntries);
         }
 
-        var totalChanges = allChanges.Count;
+        var totalChanges = Math.Max(0, rawEntries.Count - startIndex);
 
         if (request.Headers.IfModifiedSince is { } modifiedSince)
         {
