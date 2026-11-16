@@ -163,6 +163,17 @@ app.Run();</pre>
                 <label class="row muted-hint">
                   <input type="checkbox" id="exp-scan" checked /> EnableScanInQuery
                 </label>
+                <label class="row muted-hint">
+                  <input type="checkbox" id="exp-index-metrics" checked /> PopulateIndexMetrics
+                </label>
+                <select id="exp-geo-preset" onchange="applyExplorerGeoPreset()" style="max-width:200px;">
+                  <option value="">-- Presets Geo SQL --</option>
+                  <option value="nearby">ST_DISTANCE &lt;= 5km (ORDER BY)</option>
+                  <option value="within">ST_WITHIN (Geofence)</option>
+                  <option value="intersects">ST_INTERSECTS (Rota)</option>
+                  <option value="area">ST_AREA (km²)</option>
+                  <option value="invalid">NOT ST_ISVALID (Diagnóstico)</option>
+                </select>
               </div>
               <div class="row">
                 <span class="pill surface-pill" id="exp-ru">RU: 0</span>
@@ -171,10 +182,26 @@ app.Run();</pre>
                 <button class="btn" onclick="runQuery()">Execute Query (Ctrl+Enter)</button>
               </div>
             </div>
-            <div class="mt">
-              <textarea id="exp-sql" rows="2">SELECT * FROM c</textarea>
+            <div class="explorer-split mt" style="grid-template-columns: 1.5fr 1fr;">
+              <div>
+                <label class="muted-hint" style="font-size:11.5px;">SQL Query</label>
+                <textarea id="exp-sql" rows="3">SELECT * FROM c</textarea>
+              </div>
+              <div>
+                <label class="muted-hint" style="font-size:11.5px;">Parâmetros JSON (opcional, ex.: @point, @serviceArea)</label>
+                <textarea id="exp-params" rows="3" placeholder='{"@point":{"type":"Point","coordinates":[-43.2096,-22.9035]}}'></textarea>
+              </div>
             </div>
             <div id="exp-error" class="mt error-box"></div>
+            <div id="exp-index-metrics-box" class="mt" style="display:none;"></div>
+          </div>
+
+          <div class="card mt" id="exp-geo-preview-card" style="display:none;">
+            <div class="row space-between">
+              <h3 style="margin:0;">Visualizador GeoJSON (SVG Preview)</h3>
+              <span class="muted-hint" id="exp-geo-summary" style="font-size:12px;"></span>
+            </div>
+            <div id="exp-geo-preview" class="mt"></div>
           </div>
 
           <div class="explorer-split mt">
@@ -213,9 +240,11 @@ app.Run();</pre>
                 <small class="muted-hint">Simule SQL, quantidade de itens, tamanho dos documentos, IndexingPolicy e compare preços entre 14 países.</small>
               </div>
               <div class="row">
-                <button class="btn secondary sm" onclick="applyCostPreset('efficient')">Preset: Query Indexada (10 RU)</button>
+                <button class="btn secondary sm" onclick="applyCostPreset('efficient')">Preset: Query Indexada</button>
                 <button class="btn secondary sm" onclick="applyCostPreset('cross')">Preset: Cross-Partition</button>
-                <button class="btn secondary sm" onclick="applyCostPreset('scan')">Preset: IndexingMode.None Scan</button>
+                <button class="btn secondary sm" onclick="applyCostPreset('scan')">Preset: Scan</button>
+                <button class="btn secondary sm" onclick="applyCostPreset('spatial-indexed')">Preset: Geo SpatialIndex</button>
+                <button class="btn secondary sm" onclick="applyCostPreset('spatial-scan')">Preset: Geo sem Índice</button>
                 <button class="btn" onclick="runCostSimulation()">Simular Custo</button>
               </div>
             </div>
@@ -241,6 +270,8 @@ app.Run();</pre>
             <div class="row mt">
               <label class="row muted-hint"><input type="checkbox" id="sim-free-tier" onchange="runCostSimulation()" /> Aplicar Free Tier (1.000 RU/s + 25 GB)</label>
               <label class="row muted-hint"><input type="checkbox" id="sim-az" onchange="runCostSimulation()" /> Availability Zones (+25%)</label>
+              <label class="row muted-hint"><input type="checkbox" id="sim-spatial-index" checked onchange="runCostSimulation()" /> SpatialIndex Configurado</label>
+              <label class="row muted-hint"><input type="checkbox" id="sim-geohash" onchange="runCostSimulation()" /> Particionamento Geohash (reduz fan-out)</label>
             </div>
 
             <div class="mt">
@@ -267,6 +298,27 @@ app.Run();</pre>
             <h3>Breakdown da Estimativa de RU</h3>
             <div id="sim-breakdown" class="mt"></div>
             <div id="sim-warnings" class="mt"></div>
+          </div>
+
+          <div class="card mt">
+            <div class="row space-between">
+              <div>
+                <h3 class="card-title">Simulador de Telemetria / Frota GPS (Tempo Real)</h3>
+                <small class="muted-hint">Baseado na Seção 11 do Guia: estima writes/s, RU/s de ingestão + buscas de proximidade, armazenamento com TTL e custo mensal.</small>
+              </div>
+              <button class="btn" onclick="runFleetSimulation()">Calcular Frota GPS</button>
+            </div>
+            <div class="grid mt">
+              <div class="field"><label for="fleet-vehicles">Veículos Ativos</label><input type="number" id="fleet-vehicles" value="1000" min="1" /></div>
+              <div class="field"><label for="fleet-interval">Intervalo GPS (s)</label><input type="number" id="fleet-interval" value="10" min="1" step="1" /></div>
+              <div class="field"><label for="fleet-ru-write">RUs / Gravação GPS</label><input type="number" id="fleet-ru-write" value="5" min="1" step="0.5" /></div>
+              <div class="field"><label for="fleet-qps">Buscas Proximidade / s</label><input type="number" id="fleet-qps" value="20" min="0" step="1" /></div>
+              <div class="field"><label for="fleet-ru-read">RUs / Busca</label><input type="number" id="fleet-ru-read" value="4" min="1" step="0.5" /></div>
+              <div class="field"><label for="fleet-retention">Retenção Histórico TTL (dias)</label><input type="number" id="fleet-retention" value="1" min="0" /></div>
+              <div class="field"><label for="fleet-days">Dias / Mês</label><input type="number" id="fleet-days" value="30" min="1" max="31" /></div>
+              <div class="field"><label for="fleet-peak">Fator de Pico (Provisioned)</label><input type="number" id="fleet-peak" value="1.5" min="1" step="0.1" /></div>
+            </div>
+            <div id="fleet-output" class="mt"></div>
           </div>
         </section>
 

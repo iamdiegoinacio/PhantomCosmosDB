@@ -61,7 +61,7 @@ internal sealed class ContainerExplorerEndpoint : IDashboardEndpointHandler
         if (ctx.Method == HttpMethods.Get)
         {
             var take = int.TryParse(ctx.HttpContext.Request.Query["take"], out var t) ? Math.Clamp(t, 1, 200) : 50;
-            var result = await ExecuteQueryAsync(container, $"SELECT TOP {take} * FROM c", enableScan: true, ctx.HttpContext.RequestAborted);
+            var result = await ExecuteQueryAsync(container, $"SELECT TOP {take} * FROM c", enableScan: true, populateIndexMetrics: false, parameters: null, ctx.HttpContext.RequestAborted);
             await ctx.HttpContext.WriteJsonAsync(new { container = containerName, count = result.Items.Count, totalRu = result.TotalRu, items = result.Items });
             return true;
         }
@@ -113,10 +113,19 @@ internal sealed class ContainerExplorerEndpoint : IDashboardEndpointHandler
         }
 
         var enableScan = req["enableScan"]?.Value<bool>() ?? true;
+        var populateIndexMetrics = req["populateIndexMetrics"]?.Value<bool>() ?? false;
+        var parameters = req["parameters"] as JObject;
         try
         {
-            var result = await ExecuteQueryAsync(container, sql, enableScan, ctx.HttpContext.RequestAborted);
-            await ctx.HttpContext.WriteJsonAsync(new { container = containerName, count = result.Items.Count, totalRu = result.TotalRu, items = result.Items });
+            var result = await ExecuteQueryAsync(container, sql, enableScan, populateIndexMetrics, parameters, ctx.HttpContext.RequestAborted);
+            await ctx.HttpContext.WriteJsonAsync(new
+            {
+                container = containerName,
+                count = result.Items.Count,
+                totalRu = result.TotalRu,
+                indexMetrics = result.IndexMetrics,
+                items = result.Items
+            });
         }
         catch (CosmosException ex)
         {
@@ -124,25 +133,59 @@ internal sealed class ContainerExplorerEndpoint : IDashboardEndpointHandler
         }
     }
 
-    private static async Task<(List<JToken> Items, double TotalRu)> ExecuteQueryAsync(
+    private static async Task<(List<JToken> Items, double TotalRu, JToken? IndexMetrics)> ExecuteQueryAsync(
         InMemoryContainer container,
         string sql,
         bool enableScan,
+        bool populateIndexMetrics,
+        JObject? parameters,
         CancellationToken ct)
     {
-        var opts = new QueryRequestOptions { EnableScanInQuery = enableScan };
-        var iterator = container.GetItemQueryIterator<JToken>(new QueryDefinition(sql), requestOptions: opts);
+        var opts = new QueryRequestOptions
+        {
+            EnableScanInQuery = enableScan,
+            PopulateIndexMetrics = populateIndexMetrics
+        };
+        var qd = new QueryDefinition(sql);
+        if (parameters != null)
+        {
+            foreach (var prop in parameters.Properties())
+            {
+                var paramName = prop.Name.StartsWith('@') ? prop.Name : "@" + prop.Name;
+                qd.WithParameter(paramName, prop.Value);
+            }
+        }
+
+        var iterator = container.GetItemQueryIterator<JToken>(qd, requestOptions: opts);
         var items = new List<JToken>();
         double totalRu = 0;
+        string? rawIndexMetrics = null;
 
         while (iterator.HasMoreResults)
         {
             var page = await iterator.ReadNextAsync(ct);
             totalRu += page.RequestCharge;
+            if (populateIndexMetrics && string.IsNullOrEmpty(rawIndexMetrics) && !string.IsNullOrEmpty(page.IndexMetrics))
+            {
+                rawIndexMetrics = page.IndexMetrics;
+            }
             items.AddRange(page);
         }
 
-        return (items, Math.Round(totalRu, 2));
+        if (populateIndexMetrics &&
+            Core.CosmosSqlParser.TryParse(sql, out var parsedSql))
+        {
+            rawIndexMetrics = Core.Domain.Validation.IndexMetricsBuilder.Build(
+                parsedSql, container.ContainerPropertiesInternal.IndexingPolicy);
+        }
+
+        JToken? parsedMetrics = null;
+        if (!string.IsNullOrEmpty(rawIndexMetrics))
+        {
+            try { parsedMetrics = JToken.Parse(rawIndexMetrics); } catch { parsedMetrics = rawIndexMetrics; }
+        }
+
+        return (items, Math.Round(totalRu, 2), parsedMetrics);
     }
 
     private static PartitionKey ParsePartitionKey(string? raw, string fallbackId)

@@ -85,6 +85,7 @@ namespace PhantomDashboard.Features {
             <span class="tag">Index: ${c.indexingMode}</span>
             ${c.defaultTtl !== null && c.defaultTtl !== undefined ? `<span class="tag">TTL: ${c.defaultTtl}</span>` : ""}
             ${c.compositeIndexCount > 0 ? `<span class="tag">Composite: ${c.compositeIndexCount}</span>` : ""}
+            ${(c.spatialIndexes?.length ?? 0) > 0 ? `<span class="tag">Geo (${c.geospatialType ?? "Geography"}): ${c.spatialIndexes!.length} spatial</span>` : ""}
             ${c.uniqueKeys.length > 0 ? `<span class="tag">UniqueKeys: ${c.uniqueKeys.length}</span>` : ""}
             ${c.computedProperties.length > 0 ? `<span class="tag">Computed: ${c.computedProperties.length}</span>` : ""}
           </div>

@@ -31,7 +31,47 @@ public sealed class QueryCostSimulationRequest
     public bool AvailabilityZones { get; set; }
     public int AdditionalRegionsCount { get; set; }
     public bool MultiRegionWrites { get; set; }
+    public bool HasSpatialIndex { get; set; } = true;
+    public bool IsGeohashPartitioned { get; set; }
 }
+
+[JsonObject(NamingStrategyType = typeof(CamelCaseNamingStrategy))]
+public sealed class GeoFleetSimulationRequest
+{
+    public string Region { get; set; } = CosmosRegionalPricingCatalog.DefaultRegionId;
+    public int Vehicles { get; set; } = 1000;
+    public double IntervalSeconds { get; set; } = 10.0;
+    public double RuPerWrite { get; set; } = 5.0;
+    public int DaysInMonth { get; set; } = 30;
+    public double PeakMultiplier { get; set; } = 1.5;
+    public double QueriesPerSecond { get; set; } = 20.0;
+    public double RuPerReadQuery { get; set; } = 4.0;
+    public double AvgDocumentSizeKb { get; set; } = 1.0;
+    public int RetentionDays { get; set; } = 1;
+    public bool ApplyFreeTier { get; set; }
+}
+
+[JsonObject(NamingStrategyType = typeof(CamelCaseNamingStrategy))]
+internal sealed record GeoFleetSimulationResult(
+    CosmosRegionPricing Region,
+    CosmosRegionPricing BaselineRegion,
+    double WritesPerSecond,
+    double WritesPerMonth,
+    double WriteRuPerSecond,
+    double WriteRuPerMonth,
+    double ReadRuPerSecond,
+    double ReadRuPerMonth,
+    double AverageTotalRuPerSecond,
+    double PeakTotalRuPerSecond,
+    double TotalMonthlyRus,
+    double TotalMonthlyMillionRus,
+    double EstimatedStorageGb,
+    int RecommendedProvisionedRu,
+    MonthlyCostEstimate Serverless,
+    MonthlyCostEstimate Provisioned,
+    MonthlyCostEstimate Autoscale,
+    MonthlyCostEstimate BaselineServerless,
+    IReadOnlyList<string> Warnings);
 
 [JsonObject(NamingStrategyType = typeof(CamelCaseNamingStrategy))]
 internal sealed record QueryCostBreakdown(
@@ -193,8 +233,35 @@ internal static class CosmosQueryCostSimulator
 
         if (isCrossPartition && physicalPartitions > 1)
         {
-            crossPartitionRu = 2.5 * physicalPartitions;
-            warnings.Add($"Query Cross-Partition em {physicalPartitions} partições físicas: adicione filtro pela Partition Key no WHERE para evitar ~2.5 RUs por partição.");
+            var effectivePartitions = request.IsGeohashPartitioned ? Math.Min(4, physicalPartitions) : physicalPartitions;
+            crossPartitionRu = 2.5 * effectivePartitions;
+            if (request.IsGeohashPartitioned)
+            {
+                warnings.Add($"Estratégia Geohash reduz fan-out para ~{effectivePartitions} células vizinhas (vs. {physicalPartitions} partições totais). Inclua células vizinhas para evitar erro nas bordas.");
+            }
+            else
+            {
+                warnings.Add($"Query Cross-Partition em {physicalPartitions} partições físicas: adicione filtro pela Partition Key no WHERE para evitar ~2.5 RUs por partição.");
+            }
+        }
+
+        var isSpatialQuery = Regex.IsMatch(sql, @"\bST_(DISTANCE|WITHIN|INTERSECTS|AREA|ISVALID|ISVALIDDETAILED)\s*\(", RegexOptions.IgnoreCase);
+        if (isSpatialQuery)
+        {
+            if (!request.HasSpatialIndex && !isFullScan)
+            {
+                indexScanPenaltyRu += Math.Max(4.0, totalItems * 0.002 * docReadRu);
+                warnings.Add("Indexação automática (/*) não cria índice espacial: configure 'spatialIndexes' no caminho GeoJSON para evitar varredura custosa.");
+            }
+
+            if (sql.Contains("ST_DISTANCE", StringComparison.OrdinalIgnoreCase))
+            {
+                if (sql.Contains("ORDER BY", StringComparison.OrdinalIgnoreCase))
+                {
+                    indexScanPenaltyRu += request.HasSpatialIndex ? 0.85 : 6.0;
+                }
+                warnings.Add("ST_DISTANCE mede distância geográfica em linha reta, não distância rodoviária nem ETA.");
+            }
         }
 
         if (Regex.IsMatch(sql, @"\b(UPPER|LOWER|CONTAINS)\s*\(", RegexOptions.IgnoreCase))
@@ -377,5 +444,84 @@ internal static class CosmosQueryCostSimulator
             Math.Round(minProcessing + storage, 2),
             Math.Round(maxProcessing + storage, 2),
             $"Escala de {maxRu / 10} a {maxRu} RU/s (tarifa 1.5x sobre o pico por hora).");
+    }
+
+    public static GeoFleetSimulationResult SimulateFleet(GeoFleetSimulationRequest request)
+    {
+        var region = CosmosRegionalPricingCatalog.GetOrDefault(request.Region);
+        var baseline = CosmosRegionalPricingCatalog.GetOrDefault(CosmosRegionalPricingCatalog.BaselineRegionId);
+
+        var vehicles = Math.Max(1, request.Vehicles);
+        var interval = Math.Max(0.1, request.IntervalSeconds);
+        var ruPerWrite = Math.Max(1.0, request.RuPerWrite);
+        var days = Math.Clamp(request.DaysInMonth, 1, 31);
+        var peakMult = Math.Max(1.0, request.PeakMultiplier);
+        var qps = Math.Max(0.0, request.QueriesPerSecond);
+        var ruPerRead = Math.Max(0.0, request.RuPerReadQuery);
+        var docKb = Math.Max(0.2, request.AvgDocumentSizeKb);
+        var retentionDays = Math.Max(0, request.RetentionDays);
+
+        var writesPerSecond = vehicles / interval;
+        var writesPerMonth = writesPerSecond * 86400.0 * days;
+        var writeRuPerSecond = writesPerSecond * ruPerWrite;
+        var writeRuPerMonth = writesPerMonth * ruPerWrite;
+
+        var readRuPerSecond = qps * ruPerRead;
+        var readRuPerMonth = readRuPerSecond * 86400.0 * days;
+
+        var avgTotalRuPerSec = writeRuPerSecond + readRuPerSecond;
+        var peakTotalRuPerSec = avgTotalRuPerSec * peakMult;
+        var totalMonthlyRus = writeRuPerMonth + readRuPerMonth;
+        var totalMonthlyMillionRus = totalMonthlyRus / 1_000_000.0;
+
+        // Estado atual + histórico retido pelo TTL + ~15% overhead de índice espacial
+        var currentStateKb = vehicles * docKb;
+        var historyKb = retentionDays > 0 ? writesPerSecond * 86400.0 * retentionDays * docKb : 0.0;
+        var estimatedStorageGb = Math.Round(((currentStateKb + historyKb) * 1.15) / (1024.0 * 1024.0), 4);
+
+        var recommendedRu = Math.Max(400, (int)(Math.Ceiling(peakTotalRuPerSec / 100.0) * 100));
+
+        var simReq = new QueryCostSimulationRequest
+        {
+            Region = region.Id,
+            StorageGb = estimatedStorageGb,
+            ApplyFreeTier = request.ApplyFreeTier
+        };
+
+        var serverless = CalculateServerless(region, totalMonthlyMillionRus, simReq);
+        var provisioned = CalculateProvisioned(region, recommendedRu, simReq);
+        var autoscale = CalculateAutoscale(region, recommendedRu, simReq);
+        var baselineServerless = CalculateServerless(baseline, totalMonthlyMillionRus, simReq);
+
+        var warnings = new List<string>();
+        if (request.ApplyFreeTier)
+            warnings.Add("Free Tier (1.000 RU/s e 25 GB) aplica-se apenas ao modo Provisionado/Autoscale, não ao Serverless.");
+        if (interval <= 2.0)
+            warnings.Add($"Frequência alta de GPS ({interval:0.#}s) multiplica gravações e manutenção do índice espacial; avalie envio adaptativo (parado vs em movimento).");
+        if (peakMult > 1.2)
+            warnings.Add($"Dimensionamento Provisionado baseado no pico ({Math.Round(peakTotalRuPerSec, 1)} RU/s) reduz risco de HTTP 429; a média ({Math.Round(avgTotalRuPerSec, 1)} RU/s) pode não absorver rajadas.");
+        if (retentionDays > 7)
+            warnings.Add($"Retenção de histórico GPS por {retentionDays} dias gera ~{estimatedStorageGb:0.##} GB; configure TTL no container de telemetria.");
+
+        return new GeoFleetSimulationResult(
+            region,
+            baseline,
+            Math.Round(writesPerSecond, 2),
+            Math.Round(writesPerMonth, 0),
+            Math.Round(writeRuPerSecond, 2),
+            Math.Round(writeRuPerMonth, 0),
+            Math.Round(readRuPerSecond, 2),
+            Math.Round(readRuPerMonth, 0),
+            Math.Round(avgTotalRuPerSec, 2),
+            Math.Round(peakTotalRuPerSec, 2),
+            Math.Round(totalMonthlyRus, 0),
+            Math.Round(totalMonthlyMillionRus, 3),
+            estimatedStorageGb,
+            recommendedRu,
+            serverless,
+            provisioned,
+            autoscale,
+            baselineServerless,
+            warnings);
     }
 }

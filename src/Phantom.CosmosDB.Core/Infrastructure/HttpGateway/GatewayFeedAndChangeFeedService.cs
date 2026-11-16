@@ -218,7 +218,9 @@ internal sealed class GatewayFeedAndChangeFeedService
         List<JToken> allDocuments,
         int offset,
         int maxItemCount,
-        string cacheKey)
+        string cacheKey,
+        string? indexMetricsJson = null,
+        double? customPageCharge = null)
     {
         List<JToken> paged;
         string? continuationToken = null;
@@ -247,12 +249,19 @@ internal sealed class GatewayFeedAndChangeFeedService
             Content = new StringContent(responseBody.ToString(), Encoding.UTF8, "application/json")
         };
 
-        var pageCharge = RequestChargeCalculator.Query(
+        var pageCharge = customPageCharge ?? RequestChargeCalculator.Query(
             paged.Count, Encoding.UTF8.GetByteCount(responseBody.ToString(Formatting.None)));
         response.Headers.Add("x-ms-request-charge", pageCharge.ToString(CultureInfo.InvariantCulture));
         response.Headers.Add("x-ms-activity-id", Guid.NewGuid().ToString());
         response.Headers.Add("x-ms-session-token", _container.CurrentSessionToken);
         response.Headers.Add("x-ms-item-count", paged.Count.ToString());
+
+        if (!string.IsNullOrEmpty(indexMetricsJson))
+        {
+            response.Headers.Add(
+                "x-ms-cosmos-index-metrics",
+                Convert.ToBase64String(Encoding.UTF8.GetBytes(indexMetricsJson)));
+        }
 
         if (continuationToken is not null)
         {

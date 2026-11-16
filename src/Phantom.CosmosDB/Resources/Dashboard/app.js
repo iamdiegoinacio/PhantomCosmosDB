@@ -156,6 +156,7 @@ var PhantomDashboard;
             <span class="tag">Index: ${c.indexingMode}</span>
             ${c.defaultTtl !== null && c.defaultTtl !== undefined ? `<span class="tag">TTL: ${c.defaultTtl}</span>` : ""}
             ${c.compositeIndexCount > 0 ? `<span class="tag">Composite: ${c.compositeIndexCount}</span>` : ""}
+            ${(c.spatialIndexes?.length ?? 0) > 0 ? `<span class="tag">Geo (${c.geospatialType ?? "Geography"}): ${c.spatialIndexes.length} spatial</span>` : ""}
             ${c.uniqueKeys.length > 0 ? `<span class="tag">UniqueKeys: ${c.uniqueKeys.length}</span>` : ""}
             ${c.computedProperties.length > 0 ? `<span class="tag">Computed: ${c.computedProperties.length}</span>` : ""}
           </div>
@@ -193,7 +194,50 @@ var PhantomDashboard;
                     return;
                 this.hideContainerSettings();
                 byId("exp-sql").value = "SELECT TOP 50 * FROM c";
+                byId("exp-params").value = "";
                 await this.runQuery();
+            }
+            applyGeoPreset() {
+                const preset = byId("exp-geo-preset").value;
+                if (!preset)
+                    return;
+                const sqlEl = byId("exp-sql");
+                const paramsEl = byId("exp-params");
+                if (preset === "nearby") {
+                    sqlEl.value =
+                        "SELECT TOP 10 c.id, c.status, ST_DISTANCE(c.location, @point) AS distanceMeters FROM c WHERE ST_DISTANCE(c.location, @point) <= @radius ORDER BY ST_DISTANCE(c.location, @point) ASC";
+                    paramsEl.value = JSON.stringify({
+                        "@point": { type: "Point", coordinates: [-43.2096, -22.9035] },
+                        "@radius": 5000
+                    }, null, 2);
+                }
+                else if (preset === "within") {
+                    sqlEl.value = "SELECT c.id, c.location FROM c WHERE ST_WITHIN(c.location, @serviceArea)";
+                    paramsEl.value = JSON.stringify({
+                        "@serviceArea": {
+                            type: "Polygon",
+                            coordinates: [[[-43.25, -22.95], [-43.17, -22.95], [-43.17, -22.87], [-43.25, -22.87], [-43.25, -22.95]]]
+                        }
+                    }, null, 2);
+                }
+                else if (preset === "intersects") {
+                    sqlEl.value = "SELECT c.id, c.route FROM c WHERE ST_INTERSECTS(c.route, @restrictedArea)";
+                    paramsEl.value = JSON.stringify({
+                        "@restrictedArea": {
+                            type: "Polygon",
+                            coordinates: [[[-43.22, -22.92], [-43.19, -22.92], [-43.19, -22.89], [-43.22, -22.89], [-43.22, -22.92]]]
+                        }
+                    }, null, 2);
+                }
+                else if (preset === "area") {
+                    sqlEl.value = "SELECT c.id, c.name, ST_AREA(c.boundary) / 1000000 AS areaKm2 FROM c WHERE IS_DEFINED(c.boundary)";
+                    paramsEl.value = "";
+                }
+                else if (preset === "invalid") {
+                    sqlEl.value =
+                        "SELECT c.id, ST_ISVALIDDETAILED(c.location) AS validation FROM c WHERE IS_DEFINED(c.location) AND NOT ST_ISVALID(c.location)";
+                    paramsEl.value = "";
+                }
             }
             async runQuery() {
                 const name = byId("exp-container").value;
@@ -202,13 +246,38 @@ var PhantomDashboard;
                 this.selectedContainer = name;
                 const sql = byId("exp-sql").value;
                 const enableScan = byId("exp-scan").checked;
+                const populateIndexMetrics = byId("exp-index-metrics").checked;
+                const rawParams = byId("exp-params").value.trim();
                 const errBox = byId("exp-error");
+                const metricsBox = byId("exp-index-metrics-box");
                 errBox.style.display = "none";
+                metricsBox.style.display = "none";
+                let parameters;
+                if (rawParams.length > 0) {
+                    try {
+                        parameters = JSON.parse(rawParams);
+                    }
+                    catch {
+                        errBox.textContent = "JSON de parâmetros (@) inválido.";
+                        errBox.style.display = "block";
+                        return;
+                    }
+                }
                 try {
-                    const res = await this.api.post(`/api/containers/${encodeURIComponent(name)}/query`, { sql, enableScan });
+                    const res = await this.api.post(`/api/containers/${encodeURIComponent(name)}/query`, {
+                        sql,
+                        enableScan,
+                        populateIndexMetrics,
+                        parameters
+                    });
                     byId("exp-count").textContent = String(res.count);
                     byId("exp-ru").textContent = `RU: ${res.totalRu}`;
+                    if (res.indexMetrics) {
+                        metricsBox.style.display = "block";
+                        metricsBox.innerHTML = `<div class="muted-hint" style="font-size:11.5px; margin-bottom:4px;"><strong>IndexMetrics:</strong></div><pre style="margin:0; max-height:130px; overflow:auto;">${JSON.stringify(res.indexMetrics, null, 2)}</pre>`;
+                    }
                     this.renderQueryResults(name, res.items);
+                    this.renderGeoPreview(res.items);
                 }
                 catch (e) {
                     const err = e;
@@ -272,13 +341,18 @@ var PhantomDashboard;
                 card.style.display = "block";
                 const pkList = (cMeta.partitionKeyPaths ?? ["/id"]).join(", ");
                 const indexing = cMeta.indexingMode ?? "Consistent";
+                const geoType = cMeta.geospatialType ?? "Geography";
+                const spatialBadges = (cMeta.spatialIndexes ?? [])
+                    .map(si => `<span class="tag">${si.path} [${si.types.join(", ")}]</span>`)
+                    .join(" ");
                 box.innerHTML = `
         <div class="grid">
           <div class="card"><h3>Container</h3><div class="metric" style="font-size:18px;">${cMeta.name}</div></div>
           <div class="card"><h3>Documentos</h3><div class="metric" style="font-size:18px;">${cMeta.itemCount}</div></div>
           <div class="card"><h3>Partition Key</h3><div class="metric" style="font-size:18px;">${pkList}</div></div>
-          <div class="card"><h3>Indexing Mode</h3><div class="metric" style="font-size:18px;">${indexing}</div></div>
+          <div class="card"><h3>Indexing / Geo</h3><div class="metric" style="font-size:18px;">${indexing} (${geoType})</div></div>
         </div>
+        ${spatialBadges ? `<div class="mt"><strong>SpatialIndexes:</strong> ${spatialBadges}</div>` : ""}
       `;
             }
             hideContainerSettings() {
@@ -345,6 +419,74 @@ var PhantomDashboard;
                 byId("exp-upsert").value = JSON.stringify(item, null, 2);
                 byId("exp-delete-btn").style.display = itemId ? "inline-flex" : "none";
             }
+            renderGeoPreview(items) {
+                const card = byId("exp-geo-preview-card");
+                const preview = byId("exp-geo-preview");
+                const summary = byId("exp-geo-summary");
+                const features = [];
+                for (const item of items) {
+                    const id = typeof item.id === "string" ? item.id : "geo";
+                    for (const val of Object.values(item)) {
+                        if (val && typeof val === "object" && !Array.isArray(val)) {
+                            const g = val;
+                            if (g.type === "Point" && Array.isArray(g.coordinates) && g.coordinates.length >= 2) {
+                                features.push({ id, type: "Point", coords: [[Number(g.coordinates[0]), Number(g.coordinates[1])]] });
+                            }
+                            else if (g.type === "LineString" && Array.isArray(g.coordinates)) {
+                                const pts = g.coordinates.filter(c => Array.isArray(c) && c.length >= 2);
+                                if (pts.length >= 2)
+                                    features.push({ id, type: "LineString", coords: pts });
+                            }
+                            else if (g.type === "Polygon" && Array.isArray(g.coordinates) && Array.isArray(g.coordinates[0])) {
+                                const pts = g.coordinates[0].filter(c => Array.isArray(c) && c.length >= 2);
+                                if (pts.length >= 3)
+                                    features.push({ id, type: "Polygon", coords: pts });
+                            }
+                        }
+                    }
+                }
+                if (features.length === 0) {
+                    card.style.display = "none";
+                    return;
+                }
+                let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+                for (const f of features) {
+                    for (const [x, y] of f.coords) {
+                        if (x < minX)
+                            minX = x;
+                        if (x > maxX)
+                            maxX = x;
+                        if (y < minY)
+                            minY = y;
+                        if (y > maxY)
+                            maxY = y;
+                    }
+                }
+                const padX = Math.max(0.01, (maxX - minX) * 0.15);
+                const padY = Math.max(0.01, (maxY - minY) * 0.15);
+                minX -= padX;
+                maxX += padX;
+                minY -= padY;
+                maxY += padY;
+                const w = 560, h = 180;
+                const sx = (x) => ((x - minX) / (maxX - minX)) * w;
+                const sy = (y) => h - ((y - minY) / (maxY - minY)) * h;
+                const svgShapes = features.map(f => {
+                    if (f.type === "Point") {
+                        const cx = sx(f.coords[0][0]).toFixed(1);
+                        const cy = sy(f.coords[0][1]).toFixed(1);
+                        return `<circle cx="${cx}" cy="${cy}" r="5" fill="#00d4d8" stroke="#061b44" stroke-width="1.5"><title>${f.id} [${f.coords[0][0]}, ${f.coords[0][1]}]</title></circle>`;
+                    }
+                    const pts = f.coords.map(c => `${sx(c[0]).toFixed(1)},${sy(c[1]).toFixed(1)}`).join(" ");
+                    if (f.type === "LineString") {
+                        return `<polyline points="${pts}" fill="none" stroke="#65d42e" stroke-width="2.5"><title>${f.id} (LineString)</title></polyline>`;
+                    }
+                    return `<polygon points="${pts}" fill="rgba(0,120,212,0.22)" stroke="#0078d4" stroke-width="2"><title>${f.id} (Polygon)</title></polygon>`;
+                }).join("");
+                card.style.display = "block";
+                summary.textContent = `${features.length} geometria(s) plotada(s) no bounding box`;
+                preview.innerHTML = `<svg viewBox="0 0 ${w} ${h}" style="width:100%; height:180px; background:var(--surface-2); border:1px solid var(--border); border-radius:6px;">${svgShapes}</svg>`;
+            }
         }
         Features.ExplorerController = ExplorerController;
     })(Features = PhantomDashboard.Features || (PhantomDashboard.Features = {}));
@@ -401,6 +543,8 @@ var PhantomDashboard;
                     byId("sim-indexing-mode").value = "Consistent";
                     byId("sim-queries-month").value = "1000000";
                     byId("sim-storage-gb").value = "10";
+                    byId("sim-spatial-index").checked = true;
+                    byId("sim-geohash").checked = false;
                 }
                 else if (preset === "scan") {
                     byId("sim-sql").value = "SELECT * FROM c WHERE CONTAINS(UPPER(c.nome), 'MOUSE')";
@@ -412,6 +556,36 @@ var PhantomDashboard;
                     byId("sim-indexing-mode").value = "None";
                     byId("sim-queries-month").value = "500000";
                     byId("sim-storage-gb").value = "20";
+                    byId("sim-spatial-index").checked = false;
+                    byId("sim-geohash").checked = false;
+                }
+                else if (preset === "spatial-indexed") {
+                    byId("sim-sql").value =
+                        "SELECT TOP 10 c.id, ST_DISTANCE(c.location, @point) AS meters FROM c WHERE c.status = 'available' AND ST_DISTANCE(c.location, @point) <= 5000 ORDER BY ST_DISTANCE(c.location, @point) ASC";
+                    byId("sim-total-items").value = "100000";
+                    byId("sim-returned-items").value = "10";
+                    byId("sim-doc-kb").value = "1";
+                    byId("sim-partitions").value = "8";
+                    byId("sim-pk-paths").value = "/geohash";
+                    byId("sim-indexing-mode").value = "Consistent";
+                    byId("sim-queries-month").value = "5000000";
+                    byId("sim-storage-gb").value = "5";
+                    byId("sim-spatial-index").checked = true;
+                    byId("sim-geohash").checked = true;
+                }
+                else if (preset === "spatial-scan") {
+                    byId("sim-sql").value =
+                        "SELECT TOP 10 c.id, ST_DISTANCE(c.location, @point) AS meters FROM c WHERE ST_DISTANCE(c.location, @point) <= 5000 ORDER BY ST_DISTANCE(c.location, @point) ASC";
+                    byId("sim-total-items").value = "100000";
+                    byId("sim-returned-items").value = "10";
+                    byId("sim-doc-kb").value = "1";
+                    byId("sim-partitions").value = "8";
+                    byId("sim-pk-paths").value = "/driverId";
+                    byId("sim-indexing-mode").value = "Consistent";
+                    byId("sim-queries-month").value = "5000000";
+                    byId("sim-storage-gb").value = "5";
+                    byId("sim-spatial-index").checked = false;
+                    byId("sim-geohash").checked = false;
                 }
                 else {
                     byId("sim-sql").value = "SELECT * FROM c WHERE c.status = 'paid'";
@@ -423,6 +597,8 @@ var PhantomDashboard;
                     byId("sim-indexing-mode").value = "Consistent";
                     byId("sim-queries-month").value = "1000000";
                     byId("sim-storage-gb").value = "15";
+                    byId("sim-spatial-index").checked = true;
+                    byId("sim-geohash").checked = false;
                 }
                 void this.runSimulation();
             }
@@ -446,9 +622,36 @@ var PhantomDashboard;
                     provisionedRuOverride: Number(byId("sim-prov-override").value),
                     consistencyLevel: byId("sim-consistency").value,
                     applyFreeTier: byId("sim-free-tier").checked,
-                    availabilityZones: byId("sim-az").checked
+                    availabilityZones: byId("sim-az").checked,
+                    hasSpatialIndex: byId("sim-spatial-index").checked,
+                    isGeohashPartitioned: byId("sim-geohash").checked
                 });
                 this.renderSimulation(res, docKb);
+                await this.runFleetSimulation();
+            }
+            async runFleetSimulation() {
+                const res = await this.api.post("/api/cost/simulate-fleet", {
+                    region: byId("sim-region").value || "brazil-south",
+                    vehicles: Number(byId("fleet-vehicles").value),
+                    intervalSeconds: Number(byId("fleet-interval").value),
+                    ruPerWrite: Number(byId("fleet-ru-write").value),
+                    queriesPerSecond: Number(byId("fleet-qps").value),
+                    ruPerReadQuery: Number(byId("fleet-ru-read").value),
+                    retentionDays: Number(byId("fleet-retention").value),
+                    daysInMonth: Number(byId("fleet-days").value),
+                    peakMultiplier: Number(byId("fleet-peak").value),
+                    applyFreeTier: byId("sim-free-tier").checked
+                });
+                const warnHtml = res.warnings.map(w => `<div class="warn-item">${w}</div>`).join("");
+                byId("fleet-output").innerHTML = `
+        <div class="grid">
+          <div class="card"><h3>Writes / Segundo</h3><div class="metric" style="font-size:18px;">${res.writesPerSecond}/s</div><small class="muted-hint">${res.writesPerMonth.toLocaleString()} gravações/mês</small></div>
+          <div class="card"><h3>RU/s Médio → Pico</h3><div class="metric" style="font-size:18px;">${res.averageTotalRuPerSecond} → ${res.peakTotalRuPerSecond} RU/s</div><small class="muted-hint">${res.totalMonthlyMillionRus}M RUs/mês</small></div>
+          <div class="card"><h3>Storage Est. (TTL)</h3><div class="metric" style="font-size:18px;">${res.estimatedStorageGb} GB</div><small class="muted-hint">Inclui ~15% overhead espacial</small></div>
+          <div class="card"><h3>Serverless vs Provisioned</h3><div class="metric" style="font-size:18px;">$${res.serverless.totalUsd.toFixed(2)} vs $${res.provisioned.totalUsd.toFixed(2)}</div><small class="muted-hint">Rec: ${res.recommendedProvisionedRu} RU/s | East US 2 Serverless: $${res.baselineServerless.totalUsd.toFixed(2)}</small></div>
+        </div>
+        ${warnHtml}
+      `;
             }
             populateRegionSelect(selectId) {
                 const sel = byId(selectId);
@@ -1009,6 +1212,7 @@ var PhantomDashboard;
         upsertItem: () => explorer.upsertItem(),
         newExplorerItem: () => explorer.newItem(),
         deleteSelectedItem: () => explorer.deleteSelectedItem(),
+        applyExplorerGeoPreset: () => explorer.applyGeoPreset(),
         applyChaos: () => chaos.apply(),
         disableAllChaos: () => chaos.disableAll(),
         loadLogs: () => logs.load(),
@@ -1019,6 +1223,7 @@ var PhantomDashboard;
         importContainerIntoSimulator: () => cost.importContainer(),
         applyCostPreset: (p) => cost.applyPreset(p),
         runCostSimulation: () => cost.runSimulation(),
+        runFleetSimulation: () => cost.runFleetSimulation(),
         loadSeedContainer: () => seeds.loadSelectedContainer(),
         onSeedIdStrategyChanged: () => seeds.onIdStrategyChanged(),
         setSeedVolumePreset: (n) => seeds.setVolumePreset(n),

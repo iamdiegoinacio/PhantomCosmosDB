@@ -36,7 +36,10 @@ public class ContainerConfig
 
     /// <summary>Opcional. Propriedades computadas do container.</summary>
     public List<EmulatorComputedProperty>? ComputedProperties { get; set; }
-    
+
+    /// <summary>Opcional. Configuração geoespacial do container ("Geography" padrão ou "Geometry").</summary>
+    public string? GeospatialType { get; set; }
+
     public EmulatorIndexingPolicy? IndexingPolicy { get; set; }
 }
 
@@ -47,6 +50,22 @@ public class EmulatorIndexingPolicy
     public List<string> IncludedPaths { get; set; } = [];
     public List<string> ExcludedPaths { get; set; } = [];
     public List<List<EmulatorCompositePath>> CompositeIndexes { get; set; } = [];
+    public List<EmulatorSpatialPath> SpatialIndexes { get; set; } = [];
+}
+
+public class EmulatorSpatialPath
+{
+    public required string Path { get; set; }
+    public List<string> Types { get; set; } = [];
+    public EmulatorBoundingBox? BoundingBox { get; set; }
+}
+
+public class EmulatorBoundingBox
+{
+    public double Xmin { get; set; }
+    public double Ymin { get; set; }
+    public double Xmax { get; set; }
+    public double Ymax { get; set; }
 }
 
 public class EmulatorComputedProperty

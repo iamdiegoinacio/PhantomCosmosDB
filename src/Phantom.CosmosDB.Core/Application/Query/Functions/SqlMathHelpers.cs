@@ -21,8 +21,7 @@ internal static class SqlMathHelpers
             return UndefinedValue.Instance;
         }
 
-        if (double.TryParse(left.ToString(), NumberStyles.Any, CultureInfo.InvariantCulture, out var l) &&
-            double.TryParse(right.ToString(), NumberStyles.Any, CultureInfo.InvariantCulture, out var r))
+        if (TryToDouble(left, out var l) && TryToDouble(right, out var r))
         {
             var result = op(l, r);
             if (double.IsNaN(result) || double.IsInfinity(result))
@@ -38,6 +37,34 @@ internal static class SqlMathHelpers
         }
 
         return null;
+    }
+
+    private static bool TryToDouble(object value, out double result)
+    {
+        switch (value)
+        {
+            case double d:
+                result = d;
+                return true;
+            case float f:
+                result = f;
+                return true;
+            case long l:
+                result = l;
+                return true;
+            case int i:
+                result = i;
+                return true;
+            case decimal m:
+                result = (double)m;
+                return true;
+            default:
+                return double.TryParse(
+                    Convert.ToString(value, CultureInfo.InvariantCulture),
+                    NumberStyles.Any,
+                    CultureInfo.InvariantCulture,
+                    out result);
+        }
     }
 
     public static object BitwiseOp(object? left, object? right, Func<long, long, long> op)

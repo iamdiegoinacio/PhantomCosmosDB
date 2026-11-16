@@ -8,6 +8,8 @@ namespace PhantomDashboard.Domain {
     indexingMode: string;
     automaticIndexing: boolean;
     compositeIndexCount: number;
+    geospatialType?: string;
+    spatialIndexes?: { path: string; types: string[] }[];
     uniqueKeys: string[][];
     computedProperties: { name: string; query: string }[];
   }
@@ -98,6 +100,28 @@ namespace PhantomDashboard.Domain {
     autoscale: MonthlyCostEstimate;
     baselineServerless: MonthlyCostEstimate;
     baselineProvisioned: MonthlyCostEstimate;
+    warnings: string[];
+  }
+
+  export interface GeoFleetSimulationResult {
+    region: RegionPricing;
+    baselineRegion: RegionPricing;
+    writesPerSecond: number;
+    writesPerMonth: number;
+    writeRuPerSecond: number;
+    writeRuPerMonth: number;
+    readRuPerSecond: number;
+    readRuPerMonth: number;
+    averageTotalRuPerSecond: number;
+    peakTotalRuPerSecond: number;
+    totalMonthlyRus: number;
+    totalMonthlyMillionRus: number;
+    estimatedStorageGb: number;
+    recommendedProvisionedRu: number;
+    serverless: MonthlyCostEstimate;
+    provisioned: MonthlyCostEstimate;
+    autoscale: MonthlyCostEstimate;
+    baselineServerless: MonthlyCostEstimate;
     warnings: string[];
   }
 

@@ -5,6 +5,8 @@ using System.Text;
 using Microsoft.Azure.Cosmos;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
+using Phantom.CosmosDB.Core.Domain.Primitives;
+using Phantom.CosmosDB.Core.Domain.Validation;
 
 namespace Phantom.CosmosDB.Core.Infrastructure.HttpGateway;
 
@@ -135,7 +137,31 @@ internal sealed class GatewayQueryExecutionService
 
         allDocuments = _feedService.FilterDocumentsByRange(allDocuments, rangeId, payloadPropertyName);
 
-        return _feedService.BuildPagedResponse(allDocuments, offset, maxItemCount, cacheKey);
+        string? indexMetricsJson = null;
+        double? customPageCharge = null;
+        if (CosmosSqlParser.TryParse(sqlQuery, out var analyzedQuery))
+        {
+            var policy = _container.ContainerPropertiesInternal.IndexingPolicy;
+            var spatial = SpatialIndexMatcher.Analyze(analyzedQuery, policy);
+            if (spatial.HasSpatialPredicate)
+            {
+                var approxBytes = allDocuments.Sum(d => (long)Encoding.UTF8.GetByteCount(d.ToString(Formatting.None)));
+                customPageCharge = RequestChargeCalculator.SpatialQuery(
+                    _container.ItemCount,
+                    allDocuments.Count,
+                    approxBytes,
+                    spatial.MissingSpatialPaths.Count == 0,
+                    spatial.UsesOrderByDistance);
+            }
+
+            if (request.Headers.TryGetValues("x-ms-cosmos-populateindexmetrics", out var metricFlags) &&
+                metricFlags.Any(v => string.Equals(v, "true", StringComparison.OrdinalIgnoreCase)))
+            {
+                indexMetricsJson = IndexMetricsBuilder.Build(analyzedQuery, policy);
+            }
+        }
+
+        return _feedService.BuildPagedResponse(allDocuments, offset, maxItemCount, cacheKey, indexMetricsJson, customPageCharge);
     }
 
     public Task<HttpResponseMessage> HandleReadFeedAsync(
