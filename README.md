@@ -77,30 +77,25 @@ await app.Services.UseCosmosPhantomSeederAsync();
 app.Run();
 ```
 
-*Nota: O SDK não injetará nada se o ambiente não for `Development` ou se a flag `UseCosmosPhantom` for `false`.*
+*Nota: Por padrão `UseCosmosPhantom` é **`false`**. O SDK só é ativado em ambiente `Development` e quando `UseCosmosPhantom` for explicitamente definido como `true` (via `CosmosPhantom.config.json` ou `appsettings.Development.json`).*
 
 ---
 
-## 3. Configurações e Customizações (Opcional)
+## 3. Configurações e Customizações (`CosmosPhantom.config.json`)
 
-O SDK usa uma estratégia de **Fallback**. Isso significa que ele lê suas próprias configurações internas por padrão, mas **você pode sobrescrevê-las** quando quiser personalizar os containers e injetar o caos (Chaos Engineering).
+O SDK busca automaticamente um arquivo **`CosmosPhantom.config.json`** na raiz da solução/projeto (ao lado do `.sln`), no `ContentRootPath` do Host ou dentro da pasta `Resources/`, dispensando sujar o `appsettings.json` do Host.
 
-### 3.1 Chave de Ativação (Obrigatória)
+> **Padrões Seguros (Defaults):**
+> - **`UseCosmosPhantom`**: por padrão é **`false`** (desligado).
+> - **`CosmosChaosEngineering`**: por padrão **nenhuma simulação de erro ou latência é retornada** (todas as flags começam como `false`).
 
-No seu `appsettings.Development.json`, adicione apenas a chave global para ativar o emulador:
+### 3.1 Estrutura Completa do `CosmosPhantom.config.json`
 
-```json
-{
-  "UseCosmosPhantom": true
-}
-```
-
-### 3.2 Sobrescrevendo a Configuração Padrão (`Cosmos.Phantom.Settings.json`)
-
-Se você quiser usar uma modelagem de banco diferente da que vem embutida, basta criar um arquivo `Cosmos.Phantom.Settings.json` na raiz da sua API, referenciá-lo no `Program.cs` (`builder.Configuration.AddJsonFile("Cosmos.Phantom.Settings.json")`) e garantir que ele seja copiado no `.csproj` (`CopyToOutputDirectory`).
+Crie o arquivo `CosmosPhantom.config.json` na raiz do seu projeto/solução:
 
 ```json
 {
+  "UseCosmosPhantom": true,
   "CosmosDbEmulator": {
     "DatabaseName": "MeuBancoLocal",
     "Containers": [
@@ -110,40 +105,73 @@ Se você quiser usar uma modelagem de banco diferente da que vem embutida, basta
       },
       {
         "Name": "Produtos",
-        "PartitionKeyPath": "/categoria"
+        "PartitionKeyPaths": [ "/tenantId", "/categoria" ],
+        "DefaultTimeToLive": -1,
+        "Throughput": 400,
+        "UniqueKeys": [ [ "/codigoSku" ] ],
+        "ComputedProperties": [
+          {
+            "Name": "nomeLower",
+            "Query": "SELECT VALUE LOWER(c.nome) FROM c"
+          }
+        ]
       }
-    ],
-    "Chaos": {
-      "EnableThrottlingMode": false,
-      "ThrottlingRate": 0.2,
-      "Simulate429_TooManyRequests": false,
-      "Simulate503_ServiceUnavailable": false,
-      "Simulate408_RequestTimeout": false,
-      "Simulate400_BadRequest": false
-    }
+    ]
+  },
+  "CosmosChaosEngineering": {
+    "EnableRandomThrottling": false,
+    "ThrottlingProbability": 0.2,
+    "SimulateHighLatency": false,
+    "MinLatencyMs": 500,
+    "MaxLatencyMs": 2000,
+    "RetryAfterMs": 1000,
+    "Simulate429_TooManyRequests": false,
+    "Simulate503_ServiceUnavailable": false,
+    "Simulate408_RequestTimeout": false,
+    "Simulate403_Forbidden": false,
+    "Simulate401_Unauthorized": false,
+    "Simulate409_Conflict": false,
+    "Simulate413_EntityTooLarge": false,
+    "Simulate412_PreconditionFailed": false,
+    "Simulate400_BadRequest": false
   }
 }
 ```
 
+*(Opcionalmente, as seções `CosmosDbEmulator` e `CosmosChaosEngineering` também podem ficar separadas em `Resources/Cosmos.Phantom.Settings.json` e `Resources/Chaos.Settings.json`, ou no `IConfiguration` do Host.)*
+
 ### Detalhamento das Propriedades
 
-- **`DatabaseName`**: (Obrigatório) Nome do banco de dados simulado.
-- **`Containers`**: (Obrigatório) Lista das coleções a serem criadas. O nome é sensível a maiúsculas/minúsculas e será usado para buscar os dados de semente (Seeds).
-- **`PartitionKeyPath`**: (Obrigatório) Caminho da chave de partição. Default é `/id`.
-- **`Chaos`**: (Opcional) Configuração das simulações de anomalias (Engenharia do Caos).
+- **`UseCosmosPhantom`**: (`false` por padrão) Liga ou desliga o emulador.
+- **`CosmosDbEmulator.DatabaseName`**: Nome do banco de dados simulado.
+- **`CosmosDbEmulator.Containers`**: Lista das coleções a serem criadas. Suporta `PartitionKeyPath`, `PartitionKeyPaths` (MultiHash até 3 níveis), `DefaultTimeToLive`, `Throughput`, `UniqueKeys`, `ComputedProperties` e `IndexingPolicy`.
+- **`CosmosChaosEngineering`**: (Opcional — tudo `false` por padrão) Configuração das simulações de anomalias.
 
 ---
 
-## 4. Auto-Seeding (Carga de Dados)
+## 4. Auto-Seeding (Pasta `Resources/Seeds` na Raiz)
 
-O SDK tentará automaticamente buscar os arquivos base para os containers na pasta `Seeds` localizada na raiz onde o projeto principal (API Host) for executado.
+O SDK busca automaticamente os arquivos de seed na pasta **`Resources/Seeds`** localizada na raiz do projeto/solução (ao lado do `.sln`), no `ContentRootPath` do Host ou no diretório de saída (`AppContext.BaseDirectory`).
 
-### Como funciona:
-1. Crie uma pasta chamada `Seeds` na raiz do projeto final.
+### Estrutura recomendada:
+```text
+projeto-x/
+├── projeto-x.sln
+├── CosmosPhantom.config.json
+├── Resources/
+│   └── Seeds/
+│       ├── Usuarios.json
+│       └── Produtos.json
+└── src/
+    └── ProjetoX.Host/
+        └── ProjetoX.Host.csproj
+```
+
+1. Crie a pasta `Resources/Seeds` na raiz do projeto/solução.
 2. Adicione arquivos JSON com exatamente o mesmo nome dos seus `Containers` (ex: `Usuarios.json`, `Produtos.json`).
-3. O conteúdo do JSON **deve ser um array de objetos válidos** e deve conter a propriedade que representa a Partition Key do container.
+3. O conteúdo do JSON **deve ser um array de objetos válidos** e conter a(s) propriedade(s) da Partition Key do container.
 
-**Exemplo - `Seeds/Usuarios.json`:**
+**Exemplo - `Resources/Seeds/Usuarios.json`:**
 ```json
 [
   {
@@ -159,35 +187,39 @@ O SDK tentará automaticamente buscar os arquivos base para os containers na pas
 ]
 ```
 
-O *Seeder* agrupa as inserções (via Task.WhenAll) em lotes (batching) garantindo inicialização rápida, e avisa silenciosamente por logs do sistema caso falte algum arquivo ou a modelagem esteja errada.
+O *Seeder* agrupa as inserções em lotes usando `UpsertItemAsync` (idempotente) e avisa por logs caso falte algum arquivo.
 
 ---
 
 ## 5. Chaos Engineering (Testes de Resiliência)
 
-O Chaos Engineering Configurator permite injetar falhas no SDK, simulando condições adversas sem alterar nenhuma linha de código na aplicação principal. Ideal para validar se as suas políticas de Retry e Fallback (Polly) estão funcionando.
-
-No arquivo de configuração, apenas mude as propriedades booleanas para `true` para simular as panes, por exemplo:
+Por padrão, **nenhuma falha ou latência é simulada**. Para testar políticas de Retry e Fallback (Polly), habilite explicitamente em `CosmosChaosEngineering` dentro do `CosmosPhantom.config.json`:
 
 ```json
-"Chaos": {
-    "EnableThrottlingMode": true,
-    "ThrottlingRate": 0.5, 
-    "Simulate429_TooManyRequests": true
+"CosmosChaosEngineering": {
+  "EnableRandomThrottling": true,
+  "ThrottlingProbability": 0.5,
+  "RetryAfterMs": 1000,
+  "Simulate429_TooManyRequests": true
 }
 ```
-Isso forçará o Emulador a rejeitar aleatoriamente 50% das requisições devolvendo um sub-status Cosmos de `429 Too Many Requests`.
+Isso fará o Emulador rejeitar aleatoriamente 50% das requisições devolvendo HTTP `429 Too Many Requests` com substatus `3200` e header `x-ms-retry-after-ms`.
 
-As seguintes anomalias HTTP são suportadas no Chaos SDK:
-- `Simulate429_TooManyRequests` (Gera Retry automático via Cosmos SDK se não houver política customizada)
-- `Simulate503_ServiceUnavailable`
-- `Simulate408_RequestTimeout`
-- `Simulate403_Forbidden`
-- `Simulate401_Unauthorized`
-- `Simulate409_Conflict`
-- `Simulate413_EntityTooLarge`
-- `Simulate412_PreconditionFailed`
-- `Simulate400_BadRequest`
+### Parâmetros e Erros HTTP Suportados no `CosmosChaosEngineering`:
+- **Latência e Probabilidade:**
+  - `EnableRandomThrottling` (`false`), `ThrottlingProbability` (`0.2`)
+  - `SimulateHighLatency` (`false`), `MinLatencyMs` (`500`), `MaxLatencyMs` (`2000`)
+  - `RetryAfterMs` (`1000`)
+- **Simulações de Erro HTTP:**
+  - `Simulate429_TooManyRequests` (SubStatus `3200` + `x-ms-retry-after-ms`)
+  - `Simulate503_ServiceUnavailable`
+  - `Simulate408_RequestTimeout`
+  - `Simulate403_Forbidden`
+  - `Simulate401_Unauthorized`
+  - `Simulate409_Conflict`
+  - `Simulate413_EntityTooLarge`
+  - `Simulate412_PreconditionFailed`
+  - `Simulate400_BadRequest`
 
 ---
 

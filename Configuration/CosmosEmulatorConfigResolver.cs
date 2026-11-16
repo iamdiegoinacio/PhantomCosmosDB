@@ -7,13 +7,19 @@ namespace Cosmos.Phantom.SDK.Configuration;
 
 internal static class CosmosEmulatorConfigResolver
 {
+    private const string SettingsFileName = "Cosmos.Phantom.Settings.json";
+
     /// <summary>
-    /// Lê a configuração providenciada pelo consumidor e realiza o fallback/merge 
-    /// com a configuração padrão embutida no SDK.
+    /// Lê a configuração do <c>CosmosPhantom.config.json</c> (raiz), de <c>Resources/Cosmos.Phantom.Settings.json</c>
+    /// ou de <see cref="IConfiguration"/>, aplicando fallback/merge com a configuração padrão embutida no SDK.
     /// </summary>
-    public static CosmosDbEmulatorConfig? Resolve(IConfiguration configuration)
+    public static CosmosDbEmulatorConfig? Resolve(IConfiguration configuration, string? contentRootPath = null)
     {
-        var emulatorConfig = configuration.GetSection("CosmosDbEmulator").Get<CosmosDbEmulatorConfig>();
+        var emulatorConfig =
+            LoadFromRootConfig(contentRootPath)
+            ?? LoadFromResourcesSettings(contentRootPath)
+            ?? configuration.GetSection("CosmosDbEmulator").Get<CosmosDbEmulatorConfig>();
+
         var fallbackConfig = LoadEmbeddedConfig();
 
         if (emulatorConfig == null)
@@ -28,6 +34,28 @@ internal static class CosmosEmulatorConfigResolver
         }
 
         return emulatorConfig;
+    }
+
+    private static CosmosDbEmulatorConfig? LoadFromRootConfig(string? contentRootPath)
+    {
+        var rootJson = PhantomRootConfigResolver.LoadRootConfigJson(contentRootPath);
+        return rootJson?["CosmosDbEmulator"]?.ToObject<CosmosDbEmulatorConfig>();
+    }
+
+    private static CosmosDbEmulatorConfig? LoadFromResourcesSettings(string? contentRootPath)
+    {
+        var path = PhantomResourcePathResolver.ResolveResourceFile(contentRootPath, SettingsFileName);
+        if (path == null) return null;
+
+        try
+        {
+            var jObj = JObject.Parse(File.ReadAllText(path));
+            return jObj["CosmosDbEmulator"]?.ToObject<CosmosDbEmulatorConfig>();
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     private static CosmosDbEmulatorConfig? LoadEmbeddedConfig()

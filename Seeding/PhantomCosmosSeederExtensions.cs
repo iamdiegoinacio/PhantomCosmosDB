@@ -4,6 +4,7 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Options;
 using Cosmos.Phantom.SDK.Configuration;
 using Cosmos.Phantom.SDK.ChaosEngineering;
 using Cosmos.Phantom.SDK.Seeding.Interfaces;
@@ -24,16 +25,16 @@ public static class PhantomCosmosSeederExtensions
         var config = services.GetRequiredService<Microsoft.Extensions.Configuration.IConfiguration>();
         
         // Fail-Fast Silencioso
-        if (!environment.IsDevelopment() || !config.GetValue<bool>("UseCosmosPhantom"))
+        if (!environment.IsDevelopment() || !PhantomRootConfigResolver.IsCosmosPhantomEnabled(config, environment.ContentRootPath))
         {
             return;
         }
 
-        var emulatorConfig = config.GetSection("CosmosDbEmulator").Get<CosmosDbEmulatorConfig>();
+        var emulatorConfig = services.GetService<IOptions<CosmosDbEmulatorConfig>>()?.Value;
         if (emulatorConfig == null) return;
 
         var seederService = services.GetRequiredService<ICosmosDbSeederService>();
-        var seedsFolderPath = System.IO.Path.Combine(environment.ContentRootPath, "Seeds");
+        var seedsFolderPath = PhantomResourcePathResolver.ResolvePrimarySeedsFolder(environment.ContentRootPath);
         
         try
         {
