@@ -2,13 +2,13 @@
   <img src="Docs/Img/phantom_logo.png" alt="Cosmos Phantom Logo" width="250"/>
 </div>
 
-# Cosmos Phantom SDK (InMemoryEmulator)
+# CosmosPhantom
 
 ![.NET 8](https://img.shields.io/badge/.NET-8.0-blueviolet.svg)
 ![Conventional Commits](https://img.shields.io/badge/Conventional%20Commits-1.0.0-%23FE5196?logo=conventionalcommits&logoColor=white)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
-**Cosmos Phantom SDK** é um SDK para .NET focado em fornecer um ambiente de banco de dados Cosmos DB em memória, de forma nativa e aderente aos padrões da Microsoft. Ele facilita o desenvolvimento local, a automação de testes e a engenharia do caos, sem a necessidade de infraestrutura pesada ou acesso a recursos em nuvem reais durante o ciclo de desenvolvimento.
+**CosmosPhantom** é um emulador em memória de Azure Cosmos DB e harness de desenvolvimento/testes para .NET. Ele facilita o desenvolvimento local, a automação de testes, o auto-seeding e a engenharia do caos sem a necessidade de infraestrutura pesada ou acesso a recursos em nuvem reais durante o ciclo de desenvolvimento.
 
 ## Principais Recursos
 
@@ -20,33 +20,26 @@
 
 ---
 
-## Créditos e Base Tecnológica
+## Arquitetura Unificada (`CosmosPhantom.CosmosDB.Core`)
 
-Este SDK foi construído tendo como motor principal o pacote NuGet **CosmosDB.InMemoryEmulator**.
+O **CosmosPhantom** incorpora seu próprio motor de emulação em memória diretamente na solution (`CosmosPhantom.CosmosDB.Core`, `CosmosPhantom.CosmosDB.JsTriggers` e `CosmosPhantom.CosmosDB.ProductionExtensions`), empacotados juntos em um único pacote NuGet **`CosmosPhantom`**.
 
-```xml
-<PackageReference Include="CosmosDB.InMemoryEmulator" Version="4.0.20" />
-```
-
-**O que o Cosmos Phantom SDK faz com esse pacote?**
-O pacote `CosmosDB.InMemoryEmulator` provê a fundação técnica essencial para criar um servidor Cosmos DB local e em memória no .NET. No entanto, o **Cosmos Phantom SDK** atua como uma camada superior (*wrapper/framework*) que estende as capacidades básicas. O Phantom pega o motor base do emulador e adiciona de forma transparente:
-
-1. **Auto-seeding Dinâmico:** Automatiza a injeção inicial de dados lendo nativamente arquivos `.json`, poupando a necessidade de scripts de carga manuais ao subir o emulador.
-2. **Engenharia do Caos (Chaos Engineering):** Introduz uma camada de interceptação que simula falhas de rede e de requisições de forma sistêmica e configurável.
-3. **Fail-Fast Configuration:** Adiciona validações robustas baseadas no modelo *Options Pattern* para que o ambiente local falhe instantaneamente caso falte alguma configuração essencial, prevenindo ambiguidades no ambiente de desenvolvimento.
-4. **Integração Plug-and-Play no ASP.NET Core:** Simplifica o *setup* para apenas poucas linhas no `Program.cs`, abstraindo a complexidade de instanciar e gerenciar o ciclo de vida do emulador base.
+1. **`CosmosPhantom.CosmosDB.Core` (Motor):** Emula o protocolo do Azure Cosmos DB (`InMemoryCosmosClient`, `InMemoryContainer`, parser SQL completo, `ORDER BY RANK RRF`, `TransactionalBatch` atômico e Bulk não-atômico via HybridRow, `ChangeFeed` `Incremental` e `AllVersionsAndDeletes`, `Sprocs`/`Triggers`/`UDFs`, `SubStatusCodes`, `MultiHash`, `UniqueKeys`, `IndexingPolicy`, `Throughput` e `FakeCosmosHandler`).
+2. **`CosmosPhantom` (Host / DX / Harness):**
+   - **Auto-seeding Dinâmico:** Lê `Resources/Seeds/*.json` na raiz da solução/Host usando `UpsertItemAsync` idempotente.
+   - **Engenharia do Caos (Chaos Engineering):** Intercepta requisições para simular latência, throttling e falhas HTTP Cosmos DB (`429`, `503`, `408`, etc.).
+   - **Fail-Fast Configuration:** Valida configurações via *Options Pattern* com `DataAnnotations`.
+   - **Descoberta Plug-and-Play:** Lê automaticamente `CosmosPhantom.config.json` na raiz da solução (`.sln`) e mantém `UseCosmosPhantom: false` por padrão.
 
 ---
 
 ## 1. Instalação Simples (Plug and Play)
 
-Para usar o SDK, o projeto consumidor (ex: `Host.csproj`) precisa apenas referenciar o SDK e ter a chave de ativação no `appsettings.json`. O SDK já vem com uma **modelagem e sementes (seeds) padrão embutidas (Boilerplate)**, então você não precisa criar nenhum arquivo para testar!
-
-Adicione o seguinte trecho no `.csproj` da sua API:
+Instale o pacote NuGet **`CosmosPhantom`** (ou referencie `src/CosmosPhantom/CosmosPhantom.csproj`):
 
 ```xml
 <ItemGroup>
-    <ProjectReference Include="..\Cosmos.Phantom.SDK\Cosmos.Phantom.SDK.csproj" />
+    <PackageReference Include="CosmosPhantom" Version="1.0.0" />
 </ItemGroup>
 ```
 
@@ -57,8 +50,8 @@ Adicione o seguinte trecho no `.csproj` da sua API:
 No seu `Program.cs`, importe os namespaces:
 
 ```csharp
-using Cosmos.Phantom.SDK;
-using Cosmos.Phantom.SDK.Seeding;
+using CosmosPhantom;
+using CosmosPhantom.Seeding;
 ```
 
 A injeção do SDK foi projetada para ser extremamente limpa:
