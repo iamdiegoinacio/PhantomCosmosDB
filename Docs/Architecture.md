@@ -1,119 +1,117 @@
-# Arquitetura: Cosmos Phantom SDK
+# Arquitetura: Phantom.CosmosDB
 
-Abaixo, detalhamos a arquitetura do **Cosmos Phantom SDK** em três visões principais.
+Este documento detalha a arquitetura do **Phantom.CosmosDB** em três visões: componentes, ativação orientada por Connection String e fluxo em runtime (Chaos + Telemetria + PhantomDB Dashboard).
 
 ---
 
-## 1. Visão Geral de Componentes (Diagrama de Fluxo)
-
-Este diagrama mostra as principais peças do SDK e como elas interagem com a Aplicação Principal (Consumer API) e com o pacote base (`CosmosDB.InMemoryEmulator`).
+## 1. Visão Geral de Componentes
 
 ```mermaid
 flowchart TD
     subgraph ConsumerAPI ["API Consumidora (Host)"]
-        Config["appsettings.json"]
-        Program["Program.cs"]
-        Seeds["Pasta /Seeds"]
+        AppSettings["appsettings*.json (ConnectionStrings:CosmosDb)"]
+        PhantomCfg["phantom.config.json (Containers & Chaos)"]
+        Program["Program.cs (builder.AddCosmosDb / app.UsePhantomDashboard)"]
+        Seeds["Resources/Seeds/*.json"]
     end
 
-    subgraph PhantomSDK ["Cosmos Phantom SDK"]
-        Options["Options Pattern Validations"]
-        ExtSetup["AddCosmosPhantomEmulator"]
-        ExtSeed["UseCosmosPhantomSeederAsync"]
-        
-        subgraph Seeding ["Motor de Seeding"]
-            SeederService("CosmosDbSeederService")
-            DbManager("CosmosDbManager")
-            FileReader("SeedFileReader")
-            BulkInserter("CosmosDbBulkInserter")
-        end
-        
+    subgraph PhantomLib ["Phantom.CosmosDB"]
+        Parser["CosmosConnectionStringParser"]
+        AzureStrat["AzureCosmosClientStrategy (Real)"]
+        PhantomStrat["PhantomCosmosClientStrategy (Memória)"]
+        HostedSeed["CosmosPhantomSeedingHostedService"]
         Chaos["ChaosEngineeringConfigurator"]
+        Telemetry["CosmosPhantomTelemetryHandler"]
+        Registry["CosmosPhantomRuntimeRegistry"]
+        Dashboard["PhantomDB Dashboard (/_phantom)"]
     end
 
-    subgraph BaseEmulator ["CosmosDB.InMemoryEmulator NuGet"]
-        InMemDB[("In-Memory Cosmos Server")]
-        HttpMessageHandler["Custom HttpMessageHandler"]
+    subgraph CoreEngine ["Phantom.CosmosDB.Core"]
+        Router["CosmosRoutingMessageHandler"]
+        Handler["FakeCosmosHandler"]
+        InMemDB[("InMemoryContainer")]
     end
 
-    %% Relações da inicialização
-    Program -->|Configura DI| ExtSetup
-    ExtSetup -->|Valida via| Options
-    Options -->|Lê| Config
-    
-    Program -->|Executa pipeline| ExtSeed
-    ExtSeed -->|Inicia| SeederService
-    SeederService -->|Lê JSONs| FileReader
-    FileReader -->|Busca de| Seeds
-    SeederService -->|Cria DB/Containers| DbManager
-    SeederService -->|Delega Inserção| BulkInserter
-    BulkInserter -->|Grava dados| InMemDB
-    
-    %% Relações do Emulador Base
-    ExtSetup -->|Injeta DelegatingHandler| Chaos
-    Chaos -->|Configura Interceptador| HttpMessageHandler
-    HttpMessageHandler --> InMemDB
+    Program --> Parser
+    AppSettings --> Parser
+    Parser -->|Mode = Real| AzureStrat
+    Parser -->|Mode = Phantom| PhantomStrat
+
+    PhantomStrat -->|Lê topologia & chaos| PhantomCfg
+    PhantomStrat --> Registry
+    PhantomStrat --> HostedSeed
+    HostedSeed -->|Lê JSONs e popula| Seeds
+    HostedSeed -->|Upsert| InMemDB
+
+    PhantomStrat --> Telemetry
+    Telemetry --> Router
+    Router --> Handler
+    Chaos -->|FaultInjector| Handler
+    Handler --> InMemDB
+
+    Program --> Dashboard
+    Dashboard --> Registry
 ```
 
 ---
 
-## 2. Fluxo de Inicialização e Seeding (Sequence Diagram)
-
-Mostra o comportamento sequencial no momento em que a aplicação "sobe", lendo os arquivos locais e populando a base na memória.
+## 2. Ativação Orientada por Connection String (Sequence Diagram)
 
 ```mermaid
 sequenceDiagram
-    participant App as API Host (Program.cs)
-    participant SDK as PhantomCosmosSeederExtensions
-    participant Seeder as CosmosDbSeederService
-    participant Reader as SeedFileReader
-    participant Inserter as CosmosDbBulkInserter
-    participant Base as InMemoryEmulator
+    participant App as Program.cs
+    participant Ext as PhantomCosmosExtensions
+    participant Parser as CosmosConnectionStringParser
+    participant Strategy as Strategy (Real ou Phantom)
+    participant Hosted as CosmosPhantomSeedingHostedService
+    participant Core as InMemoryContainer
 
-    App->>SDK: UseCosmosPhantomSeederAsync()
-    SDK->>SDK: Valida ambiente (Fail-Fast)
-    SDK->>Seeder: SeedAsync(seedsFolderPath)
-    
-    Seeder->>Base: Cria Banco de Dados
-    
-    loop Para cada Container no Config
-        Seeder->>Base: Cria Container
-        Seeder->>Reader: ReadSeedFileAsync(folder, container)
-        Reader-->>Seeder: Retorna JSON string
-        Seeder->>Inserter: BulkInsertAsync(container, json)
-        Inserter->>Inserter: Parse do JSON (Lotes de 50)
-        Inserter->>Base: UpsertItemAsync (em concorrência)
-        Inserter-->>Seeder: Retorna quantidade inserida
+    App->>Ext: builder.AddCosmosDb()
+    Ext->>Parser: Parse(ConnectionStrings:CosmosDb)
+
+    alt Connection String Real (Azure)
+        Parser-->>Ext: Mode = Real
+        Ext->>Strategy: AzureCosmosClientStrategy.Register()
+        Strategy-->>App: Registra CosmosClient oficial (nuvem)
+    else Connection String Phantom (https://phantom.local/)
+        Parser-->>Ext: Mode = Phantom
+        Ext->>Strategy: PhantomCosmosClientStrategy.Register()
+        Strategy->>Strategy: Valida guardrail Production + phantom.config.json
+        Strategy-->>App: Registra CosmosClient emulado, Telemetry, Registry e HostedService
+        App->>Hosted: Host StartAsync()
+        Hosted->>Core: Cria containers e executa Upsert de Resources/Seeds/*.json
     end
-    
-    Seeder-->>SDK: Concluído
-    SDK-->>App: Pipeline liberado (API pronta para requisições)
 ```
 
 ---
 
-## 3. Fluxo em Tempo de Execução e Chaos Engineering
-
-Mostra o que acontece quando a API já está de pé e um repositório da aplicação tenta acessar o banco de dados. O Chaos Engineering atua aqui, interceptando as requisições e injetando falhas para testar a resiliência.
+## 3. Tempo de Execução: Telemetria, Chaos e Dashboard
 
 ```mermaid
 sequenceDiagram
-    participant Repo as Application Repository
-    participant CosmosClient as CosmosClient (Mocked)
+    participant Repo as Endpoint / Repositório
+    participant SDK as CosmosClient (Gateway)
+    participant Tel as CosmosPhantomTelemetryHandler
     participant Chaos as ChaosEngineeringConfigurator
-    participant InMem as Banco em Memória
+    participant InMem as InMemoryContainer
+    participant UI as PhantomDB Dashboard (/_phantom)
 
-    Repo->>CosmosClient: GetItemQueryIterator<T>() / CreateItemAsync()
-    CosmosClient->>Chaos: Requisição HTTP Interna (Mock)
-    
-    alt Se Chaos Engineering NÃO simular falha
-        Chaos->>InMem: Repassa requisição
-        InMem-->>Chaos: Retorna Dados (200 OK / 201 Created)
-        Chaos-->>CosmosClient: Retorna Dados
-        CosmosClient-->>Repo: Sucesso
-    else Se Chaos Engineering SIMULAR falha (ex: 429)
-        Chaos-->>CosmosClient: Aborta e retorna HTTP Status 429 Too Many Requests
-        CosmosClient-->>CosmosClient: Aciona Política de Retry Nativa (se ativada)
-        CosmosClient-->>Repo: Lança CosmosException (StatusCode 429) para a aplicação tratar
+    Repo->>SDK: ReadItemAsync / Query / CreateItemAsync
+    SDK->>Tel: HttpRequestMessage
+    Tel->>Chaos: Repassa ao FakeCosmosHandler
+
+    alt Chaos desativado ou sem falha sorteada
+        Chaos->>InMem: Executa operação em memória
+        InMem-->>Chaos: 200 OK / 201 Created + RU
+        Chaos-->>Tel: Resposta
+    else Chaos simulando falha (ex: 429)
+        Chaos-->>Tel: HTTP 429 (x-ms-substatus: 3200, retry-after)
     end
+
+    Tel->>Tel: Registra status, substatus, RU, duração e SQL no CosmosPhantomTelemetryLog
+    Tel-->>SDK: HttpResponseMessage
+    SDK-->>Repo: Resultado ou CosmosException
+
+    UI->>Tel: GET /_phantom/api/logs (live)
+    UI->>Chaos: PUT /_phantom/api/chaos (altera ChaosConfig em runtime)
 ```

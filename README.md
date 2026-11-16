@@ -1,113 +1,141 @@
 <div align="center">
-  <img src="Docs/Img/phantom_logo.png" alt="Cosmos Phantom Logo" width="250"/>
+  <img src="Docs/Img/phantom_logo.png" alt="Phantom.CosmosDB Logo" width="250"/>
 </div>
 
-# CosmosPhantom
+# Phantom.CosmosDB
 
 ![.NET 8](https://img.shields.io/badge/.NET-8.0-blueviolet.svg)
 ![Conventional Commits](https://img.shields.io/badge/Conventional%20Commits-1.0.0-%23FE5196?logo=conventionalcommits&logoColor=white)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
-**CosmosPhantom** é um emulador em memória de Azure Cosmos DB e harness de desenvolvimento/testes para .NET. Ele facilita o desenvolvimento local, a automação de testes, o auto-seeding e a engenharia do caos sem a necessidade de infraestrutura pesada ou acesso a recursos em nuvem reais durante o ciclo de desenvolvimento.
+**Phantom.CosmosDB** é um emulador em memória de Azure Cosmos DB e harness de desenvolvimento/testes para .NET. Ele permite desenvolver localmente, testar resiliência e inspecionar documentos sem infraestrutura pesada ou custos de nuvem — usando **exatamente o mesmo código de aplicação** e alternando entre Azure real e memória pela Connection String.
 
 ## Principais Recursos
 
-- **Mock de Cosmos DB Em Memória:** Substitui o `CosmosClient` em ambiente de desenvolvimento por um mock leve em memória, sem poluir código de produção.
-- **Auto-Seeding (Carga de Dados):** Lê automaticamente arquivos JSON de um diretório e popula as coleções com dados de teste assim que a aplicação sobe.
-- **Chaos Engineering Embutido:** Permite injetar falhas aleatórias (throttling, timeouts, erros HTTP variados) direto pela configuração para testar a resiliência da aplicação.
-- **Configuração Validada (Fail-Fast):** O SDK valida suas configurações através do "Options Pattern", parando a execução imediatamente se as definições do ambiente não estiverem corretas.
-- **Pluguabilidade:** Com apenas duas linhas no seu `Program.cs`, o SDK ativa ou desativa toda a infraestrutura baseada nas propriedades de ambiente.
+- **Troca transparente via Connection String (`AddCosmosDb`):** usa o `CosmosClient` real da Microsoft em produção e ativa o emulador em memória quando `ConnectionStrings:CosmosDb` aponta para o Phantom (`https://phantom.local/` ou `phantom://in-memory`).
+- **Auto-Seeding automático (`IHostedService`):** lê `Resources/Seeds/*.json` e popula os containers antes da API receber requisições, sem chamadas extras no `Program.cs`.
+- **Chaos Engineering embutido e Live:** injeta latência, throttling (`429`, substatus `3200`) e erros HTTP (`503`, `408`, `400`, `401`, `403`, `409`, `412`, `413`), configurável por arquivo ou ao vivo pelo Dashboard.
+- **PhantomDB Dashboard (`/_phantom`):** interface gráfica Web embutida com Visão Geral, Data Explorer & Query Runner SQL, controle live de Chaos, Logs ao vivo e editor de `phantom.config.json`.
+- **Motor de Alta Fidelidade (`Phantom.CosmosDB.Core`):** parser SQL completo, `ORDER BY`, `ComputedProperties`, `CompositeIndexes`, `MultiHash` (até 3 níveis), `UniqueKeys`, `IndexingMode.None` + `EnableScanInQuery`, `TransactionalBatch`, `Bulk`, `ChangeFeed` (`Incremental` e `AllVersionsAndDeletes`), `TTL` e `Sprocs`/`Triggers`/`UDFs`.
 
 ---
 
-## Arquitetura Unificada (`CosmosPhantom.CosmosDB.Core`)
+## Arquitetura Unificada (`Phantom.CosmosDB.Core`)
 
-O **CosmosPhantom** incorpora seu próprio motor de emulação em memória diretamente na solution (`CosmosPhantom.CosmosDB.Core`, `CosmosPhantom.CosmosDB.JsTriggers` e `CosmosPhantom.CosmosDB.ProductionExtensions`), empacotados juntos em um único pacote NuGet **`CosmosPhantom`**.
-
-1. **`CosmosPhantom.CosmosDB.Core` (Motor):** Emula o protocolo do Azure Cosmos DB (`InMemoryCosmosClient`, `InMemoryContainer`, parser SQL completo, `ORDER BY RANK RRF`, `TransactionalBatch` atômico e Bulk não-atômico via HybridRow, `ChangeFeed` `Incremental` e `AllVersionsAndDeletes`, `Sprocs`/`Triggers`/`UDFs`, `SubStatusCodes`, `MultiHash`, `UniqueKeys`, `IndexingPolicy`, `Throughput` e `FakeCosmosHandler`).
-2. **`CosmosPhantom` (Host / DX / Harness):**
-   - **Auto-seeding Dinâmico:** Lê `Resources/Seeds/*.json` na raiz da solução/Host usando `UpsertItemAsync` idempotente.
-   - **Engenharia do Caos (Chaos Engineering):** Intercepta requisições para simular latência, throttling e falhas HTTP Cosmos DB (`429`, `503`, `408`, etc.).
-   - **Fail-Fast Configuration:** Valida configurações via *Options Pattern* com `DataAnnotations`.
-   - **Descoberta Plug-and-Play:** Lê automaticamente `CosmosPhantom.config.json` na raiz da solução (`.sln`) e mantém `UseCosmosPhantom: false` por padrão.
+1. **`Phantom.CosmosDB.Core`:** Motor em memória (`InMemoryCosmosClient`, `InMemoryContainer`, `FakeCosmosHandler`, gateway HTTP compatível com o SDK oficial `Microsoft.Azure.Cosmos`).
+2. **`Phantom.CosmosDB.JsTriggers`:** Engine JavaScript (Jint) para Stored Procedures, Triggers e UDFs.
+3. **`Phantom.CosmosDB.ProductionExtensions`:** Extensões auxiliares para interceptação de iteradores em testes.
+4. **`Phantom.CosmosDB`:** Pacote NuGet principal com ativação por Connection String (Strategy Pattern), `phantom.config.json`, Auto-Seeding (`IHostedService`), Chaos Engineering e **PhantomDB Dashboard** (`/_phantom`).
 
 ---
 
-## 1. Instalação Simples (Plug and Play)
-
-Instale o pacote NuGet **`CosmosPhantom`** (ou referencie `src/CosmosPhantom/CosmosPhantom.csproj`):
+## 1. Instalação
 
 ```xml
 <ItemGroup>
-    <PackageReference Include="CosmosPhantom" Version="1.0.0" />
+    <PackageReference Include="Phantom.CosmosDB" Version="1.0.0" />
 </ItemGroup>
 ```
 
 ---
 
-## 2. Como Usar no `Program.cs`
+## 2. Como Usar (`Program.cs` + `appsettings*.json`)
 
-No seu `Program.cs`, importe os namespaces:
+A separação de responsabilidades mantém:
+- **`appsettings.json` / `appsettings.Development.json`**: apenas dados de conexão (`ConnectionStrings:CosmosDb`, `DatabaseName`, `ContainerName`), exatamente como em qualquer banco real.
+- **`phantom.config.json`**: criação de containers, políticas e `CosmosChaosEngineering`.
 
-```csharp
-using CosmosPhantom;
-using CosmosPhantom.Seeding;
-```
-
-A injeção do SDK foi projetada para ser extremamente limpa:
+### 2.1 `Program.cs` (único para Dev e Produção)
 
 ```csharp
-// 1. Fase de Configuração de Serviços
-// Adiciona o SDK de emulação injetando a configuração padrão (ou a sua customizada)
-builder.Services.AddCosmosPhantomEmulator(builder.Environment, builder.Configuration);
+using Phantom.CosmosDB;
+
+var builder = WebApplication.CreateBuilder(args);
+
+// Alterna automaticamente entre Azure Cosmos DB real e Phantom pela Connection String
+builder.AddCosmosDb();
 
 var app = builder.Build();
 
-// 2. Fase de Pipeline / Middleware
-// Executa o Seeder para popular os dados antes da API aceitar as requisições
-await app.Services.UseCosmosPhantomSeederAsync();
+// Opcional: habilita a UI Web em /_phantom (desativado automaticamente em Production ou modo real)
+app.UsePhantomDashboard();
 
 app.Run();
 ```
 
-*Nota: Por padrão `UseCosmosPhantom` é **`false`**. O SDK só é ativado em ambiente `Development` e quando `UseCosmosPhantom` for explicitamente definido como `true` (via `CosmosPhantom.config.json` ou `appsettings.Development.json`).*
+### 2.2 `appsettings.json` (Produção — Online) vs `appsettings.Development.json` (Local — Memória)
+
+```json
+// appsettings.json (Produção)
+{
+  "ConnectionStrings": {
+    "CosmosDb": "AccountEndpoint=https://sua-conta.documents.azure.com:443/;AccountKey=REAL_KEY==;"
+  },
+  "CosmosDb": {
+    "DatabaseName": "LojaDb",
+    "ContainerName": "Produtos"
+  }
+}
+```
+
+```json
+// appsettings.Development.json (Local - Em Memória)
+{
+  "ConnectionStrings": {
+    "CosmosDb": "AccountEndpoint=https://phantom.local/;AccountKey=phantom-in-memory;"
+  },
+  "CosmosDb": {
+    "DatabaseName": "LojaDb",
+    "ContainerName": "Produtos"
+  }
+}
+```
+
+**Marcadores aceitos para modo em memória:** `https://phantom.local/`, `https://cosmosphantom.local/`, `https://in-memory.cosmos.local/`, `phantom://in-memory`, ou parâmetros `Mode=InMemory;` / `UsePhantom=true;`.
+
+> **Guardrail de Segurança:** Se uma Connection String Phantom for detectada com `ASPNETCORE_ENVIRONMENT=Production`, o `AddCosmosDb()` falha imediatamente na inicialização (salvo opt-in explícito via `AllowPhantomInProduction = true`).
+>
+> **Modo Legado:** `AddCosmosPhantomEmulator(...)` e `UseCosmosPhantomSeederAsync()` continuam suportados para projetos que utilizam a flag `"UseCosmosPhantom": true`.
 
 ---
 
-## 3. Configurações e Customizações (`CosmosPhantom.config.json`)
+## 3. Configuração de Containers e Caos (`phantom.config.json`)
 
-O SDK busca automaticamente um arquivo **`CosmosPhantom.config.json`** na raiz da solução/projeto (ao lado do `.sln`), no `ContentRootPath` do Host ou dentro da pasta `Resources/`, dispensando sujar o `appsettings.json` do Host.
-
-> **Padrões Seguros (Defaults):**
-> - **`UseCosmosPhantom`**: por padrão é **`false`** (desligado).
-> - **`CosmosChaosEngineering`**: por padrão **nenhuma simulação de erro ou latência é retornada** (todas as flags começam como `false`).
-
-### 3.1 Estrutura Completa do `CosmosPhantom.config.json`
-
-Crie o arquivo `CosmosPhantom.config.json` na raiz do seu projeto/solução:
+Crie **`phantom.config.json`** na raiz da solução/projeto (ao lado do `.sln`), no `ContentRootPath` ou em `Resources/` *(também há fallback automático para `CosmosPhantom.config.json`)*:
 
 ```json
 {
-  "UseCosmosPhantom": true,
   "CosmosDbEmulator": {
-    "DatabaseName": "MeuBancoLocal",
+    "DatabaseName": "LojaDb",
     "Containers": [
       {
-        "Name": "Usuarios",
-        "PartitionKeyPath": "/id"
-      },
-      {
         "Name": "Produtos",
-        "PartitionKeyPaths": [ "/tenantId", "/categoria" ],
+        "PartitionKeyPath": "/categoria",
         "DefaultTimeToLive": -1,
         "Throughput": 400,
-        "UniqueKeys": [ [ "/codigoSku" ] ],
+        "UniqueKeys": [ [ "/sku" ] ],
         "ComputedProperties": [
           {
             "Name": "nomeLower",
             "Query": "SELECT VALUE LOWER(c.nome) FROM c"
           }
-        ]
+        ],
+        "IndexingPolicy": {
+          "IndexingMode": "Consistent",
+          "Automatic": true,
+          "ExcludedPaths": [ "/\"_etag\"/?" ],
+          "CompositeIndexes": [
+            [
+              { "Path": "/categoria", "Order": "ascending" },
+              { "Path": "/preco", "Order": "descending" }
+            ]
+          ]
+        }
+      },
+      {
+        "Name": "Pedidos",
+        "PartitionKeyPaths": [ "/tenantId", "/clienteId", "/ano" ],
+        "Throughput": 800
       }
     ]
   },
@@ -115,9 +143,9 @@ Crie o arquivo `CosmosPhantom.config.json` na raiz do seu projeto/solução:
     "EnableRandomThrottling": false,
     "ThrottlingProbability": 0.2,
     "SimulateHighLatency": false,
-    "MinLatencyMs": 500,
-    "MaxLatencyMs": 2000,
-    "RetryAfterMs": 1000,
+    "MinLatencyMs": 200,
+    "MaxLatencyMs": 500,
+    "RetryAfterMs": 150,
     "Simulate429_TooManyRequests": false,
     "Simulate503_ServiceUnavailable": false,
     "Simulate408_RequestTimeout": false,
@@ -131,98 +159,42 @@ Crie o arquivo `CosmosPhantom.config.json` na raiz do seu projeto/solução:
 }
 ```
 
-*(Opcionalmente, as seções `CosmosDbEmulator` e `CosmosChaosEngineering` também podem ficar separadas em `Resources/Cosmos.Phantom.Settings.json` e `Resources/Chaos.Settings.json`, ou no `IConfiguration` do Host.)*
-
-### Detalhamento das Propriedades
-
-- **`UseCosmosPhantom`**: (`false` por padrão) Liga ou desliga o emulador.
-- **`CosmosDbEmulator.DatabaseName`**: Nome do banco de dados simulado.
-- **`CosmosDbEmulator.Containers`**: Lista das coleções a serem criadas. Suporta `PartitionKeyPath`, `PartitionKeyPaths` (MultiHash até 3 níveis), `DefaultTimeToLive`, `Throughput`, `UniqueKeys`, `ComputedProperties` e `IndexingPolicy`.
-- **`CosmosChaosEngineering`**: (Opcional — tudo `false` por padrão) Configuração das simulações de anomalias.
-
 ---
 
-## 4. Auto-Seeding (Pasta `Resources/Seeds` na Raiz)
+## 4. Auto-Seeding (`Resources/Seeds`)
 
-O SDK busca automaticamente os arquivos de seed na pasta **`Resources/Seeds`** localizada na raiz do projeto/solução (ao lado do `.sln`), no `ContentRootPath` do Host ou no diretório de saída (`AppContext.BaseDirectory`).
-
-### Estrutura recomendada:
 ```text
 projeto-x/
 ├── projeto-x.sln
-├── CosmosPhantom.config.json
+├── phantom.config.json
 ├── Resources/
 │   └── Seeds/
-│       ├── Usuarios.json
-│       └── Produtos.json
+│       ├── Produtos.json
+│       └── Pedidos.json
 └── src/
-    └── ProjetoX.Host/
-        └── ProjetoX.Host.csproj
+    └── ProjetoX.Api/
+        ├── appsettings.json
+        ├── appsettings.Development.json
+        └── Program.cs
 ```
 
-1. Crie a pasta `Resources/Seeds` na raiz do projeto/solução.
-2. Adicione arquivos JSON com exatamente o mesmo nome dos seus `Containers` (ex: `Usuarios.json`, `Produtos.json`).
-3. O conteúdo do JSON **deve ser um array de objetos válidos** e conter a(s) propriedade(s) da Partition Key do container.
-
-**Exemplo - `Resources/Seeds/Usuarios.json`:**
-```json
-[
-  {
-    "id": "1e5509ba-1c25-412e-990a-a5bb9b674b88",
-    "nome": "Usuário Teste",
-    "email": "teste@exemplo.com"
-  },
-  {
-    "id": "59b4ef54-8c08-41d3-9824-3453b53fc065",
-    "nome": "Admin",
-    "email": "admin@exemplo.com"
-  }
-]
-```
-
-O *Seeder* agrupa as inserções em lotes usando `UpsertItemAsync` (idempotente) e avisa por logs caso falte algum arquivo.
+1. Adicione arquivos JSON com o **mesmo nome do container** em `Resources/Seeds/`.
+2. O conteúdo deve ser um array JSON contendo as propriedades obrigatórias (`id` e a Partition Key configurada).
+3. O seeder roda automaticamente no startup via `CosmosPhantomSeedingHostedService` (idempotente com `UpsertItemAsync`).
 
 ---
 
-## 5. Chaos Engineering (Testes de Resiliência)
+## 5. PhantomDB Dashboard (`/_phantom`)
 
-Por padrão, **nenhuma falha ou latência é simulada**. Para testar políticas de Retry e Fallback (Polly), habilite explicitamente em `CosmosChaosEngineering` dentro do `CosmosPhantom.config.json`:
-
-```json
-"CosmosChaosEngineering": {
-  "EnableRandomThrottling": true,
-  "ThrottlingProbability": 0.5,
-  "RetryAfterMs": 1000,
-  "Simulate429_TooManyRequests": true
-}
-```
-Isso fará o Emulador rejeitar aleatoriamente 50% das requisições devolvendo HTTP `429 Too Many Requests` com substatus `3200` e header `x-ms-retry-after-ms`.
-
-### Parâmetros e Erros HTTP Suportados no `CosmosChaosEngineering`:
-- **Latência e Probabilidade:**
-  - `EnableRandomThrottling` (`false`), `ThrottlingProbability` (`0.2`)
-  - `SimulateHighLatency` (`false`), `MinLatencyMs` (`500`), `MaxLatencyMs` (`2000`)
-  - `RetryAfterMs` (`1000`)
-- **Simulações de Erro HTTP:**
-  - `Simulate429_TooManyRequests` (SubStatus `3200` + `x-ms-retry-after-ms`)
-  - `Simulate503_ServiceUnavailable`
-  - `Simulate408_RequestTimeout`
-  - `Simulate403_Forbidden`
-  - `Simulate401_Unauthorized`
-  - `Simulate409_Conflict`
-  - `Simulate413_EntityTooLarge`
-  - `Simulate412_PreconditionFailed`
-  - `Simulate400_BadRequest`
+Com `app.UsePhantomDashboard();` no `Program.cs`, acesse `http://localhost:<porta>/_phantom` em `Development` para:
+- **Visão Geral:** listar banco, containers, contagem de itens, `RU/s` e políticas, além de **Reset & Re-seed** em 1 clique.
+- **Data Explorer & SQL:** executar queries SQL em memória, inspecionar JSON, criar/atualizar ou excluir itens.
+- **Chaos Engineering (Live):** ativar/desativar falhas HTTP, throttling e latência em tempo real sem reiniciar a API.
+- **Logs ao Vivo:** acompanhar requisições interceptadas com status, substatus (`1001`, `1004`, `1008`, `3200`), RU/s, duração e SQL.
+- **Editor `phantom.config.json`:** visualizar, formatar e salvar alterações no disco.
 
 ---
 
 ## Arquitetura
 
-O SDK adota os princípios **SOLID**:
-- Configuração suportada pelo **Options Pattern** nativo com `[Required]` DataAnnotations.
-- Delegação de tarefas via interfaces injetáveis (`ICosmosDbSeederService`, `ICosmosDbManager`).
-- Manipulação da injeção de dependência isolada, evitando poluir o WebApplication Builder do software principal.
-
 👉 **[Ver Diagramas de Arquitetura Completos (Fluxo e Sequência)](Docs/Architecture.md)**
-
----
