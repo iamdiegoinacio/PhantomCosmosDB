@@ -49,7 +49,7 @@ No `.csproj` da sua API (por exemplo, `MinhaApi.csproj`):
 
 ```xml
 <ItemGroup>
-  <PackageReference Include="Phantom.CosmosDB" Version="1.0.0" />
+  <PackageReference Include="Phantom.CosmosDB" Version="2.0.0" />
 </ItemGroup>
 ```
 
