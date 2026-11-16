@@ -4,7 +4,6 @@ using Microsoft.Azure.Cosmos;
 using Microsoft.Azure.Cosmos.Scripts;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
-using Phantom.CosmosDB.Core.Infrastructure.SdkInterop;
 
 namespace Phantom.CosmosDB.Core.Application.Scripts;
 
@@ -163,51 +162,51 @@ internal sealed class InMemoryScripts : Microsoft.Azure.Cosmos.Scripts.Scripts
 
     public override FeedIterator<T> GetStoredProcedureQueryIterator<T>(
         string? queryText = null, string? continuationToken = null, QueryRequestOptions? requestOptions = null)
-        => new InMemoryFeedIterator<T>(() => FilterMetadata<T, StoredProcedureProperties>(_catalog.StoredProcedureProperties, queryText));
+        => CorePortDefaults.FeedIterators.CreateLazy(() => FilterMetadata<T, StoredProcedureProperties>(_catalog.StoredProcedureProperties, queryText));
 
     public override FeedIterator<T> GetStoredProcedureQueryIterator<T>(
         QueryDefinition queryDefinition, string? continuationToken = null, QueryRequestOptions? requestOptions = null)
-        => new InMemoryFeedIterator<T>(() => FilterMetadata<T, StoredProcedureProperties>(_catalog.StoredProcedureProperties, queryDefinition));
+        => CorePortDefaults.FeedIterators.CreateLazy(() => FilterMetadata<T, StoredProcedureProperties>(_catalog.StoredProcedureProperties, queryDefinition));
 
     public override FeedIterator<T> GetTriggerQueryIterator<T>(
         string? queryText = null, string? continuationToken = null, QueryRequestOptions? requestOptions = null)
-        => new InMemoryFeedIterator<T>(() => FilterMetadata<T, TriggerProperties>(_catalog.TriggerProperties, queryText));
+        => CorePortDefaults.FeedIterators.CreateLazy(() => FilterMetadata<T, TriggerProperties>(_catalog.TriggerProperties, queryText));
 
     public override FeedIterator<T> GetTriggerQueryIterator<T>(
         QueryDefinition queryDefinition, string? continuationToken = null, QueryRequestOptions? requestOptions = null)
-        => new InMemoryFeedIterator<T>(() => FilterMetadata<T, TriggerProperties>(_catalog.TriggerProperties, queryDefinition));
+        => CorePortDefaults.FeedIterators.CreateLazy(() => FilterMetadata<T, TriggerProperties>(_catalog.TriggerProperties, queryDefinition));
 
     public override FeedIterator<T> GetUserDefinedFunctionQueryIterator<T>(
         string? queryText = null, string? continuationToken = null, QueryRequestOptions? requestOptions = null)
-        => new InMemoryFeedIterator<T>(() => FilterMetadata<T, UserDefinedFunctionProperties>(_catalog.UdfProperties, queryText));
+        => CorePortDefaults.FeedIterators.CreateLazy(() => FilterMetadata<T, UserDefinedFunctionProperties>(_catalog.UdfProperties, queryText));
 
     public override FeedIterator<T> GetUserDefinedFunctionQueryIterator<T>(
         QueryDefinition queryDefinition, string? continuationToken = null, QueryRequestOptions? requestOptions = null)
-        => new InMemoryFeedIterator<T>(() => FilterMetadata<T, UserDefinedFunctionProperties>(_catalog.UdfProperties, queryDefinition));
+        => CorePortDefaults.FeedIterators.CreateLazy(() => FilterMetadata<T, UserDefinedFunctionProperties>(_catalog.UdfProperties, queryDefinition));
 
     public override FeedIterator GetStoredProcedureQueryStreamIterator(
         string? queryText = null, string? continuationToken = null, QueryRequestOptions? requestOptions = null)
-        => new InMemoryStreamFeedIterator(() => FilterMetadata<object, StoredProcedureProperties>(_catalog.StoredProcedureProperties, queryText), "StoredProcedures", () => _c.CurrentSessionToken);
+        => CorePortDefaults.FeedIterators.CreateStream(() => FilterMetadata<object, StoredProcedureProperties>(_catalog.StoredProcedureProperties, queryText), "StoredProcedures", () => _c.CurrentSessionToken);
 
     public override FeedIterator GetStoredProcedureQueryStreamIterator(
         QueryDefinition queryDefinition, string? continuationToken = null, QueryRequestOptions? requestOptions = null)
-        => new InMemoryStreamFeedIterator(() => FilterMetadata<object, StoredProcedureProperties>(_catalog.StoredProcedureProperties, queryDefinition), "StoredProcedures", () => _c.CurrentSessionToken);
+        => CorePortDefaults.FeedIterators.CreateStream(() => FilterMetadata<object, StoredProcedureProperties>(_catalog.StoredProcedureProperties, queryDefinition), "StoredProcedures", () => _c.CurrentSessionToken);
 
     public override FeedIterator GetTriggerQueryStreamIterator(
         string? queryText = null, string? continuationToken = null, QueryRequestOptions? requestOptions = null)
-        => new InMemoryStreamFeedIterator(() => FilterMetadata<object, TriggerProperties>(_catalog.TriggerProperties, queryText), "Triggers", () => _c.CurrentSessionToken);
+        => CorePortDefaults.FeedIterators.CreateStream(() => FilterMetadata<object, TriggerProperties>(_catalog.TriggerProperties, queryText), "Triggers", () => _c.CurrentSessionToken);
 
     public override FeedIterator GetTriggerQueryStreamIterator(
         QueryDefinition queryDefinition, string? continuationToken = null, QueryRequestOptions? requestOptions = null)
-        => new InMemoryStreamFeedIterator(() => FilterMetadata<object, TriggerProperties>(_catalog.TriggerProperties, queryDefinition), "Triggers", () => _c.CurrentSessionToken);
+        => CorePortDefaults.FeedIterators.CreateStream(() => FilterMetadata<object, TriggerProperties>(_catalog.TriggerProperties, queryDefinition), "Triggers", () => _c.CurrentSessionToken);
 
     public override FeedIterator GetUserDefinedFunctionQueryStreamIterator(
         string? queryText = null, string? continuationToken = null, QueryRequestOptions? requestOptions = null)
-        => new InMemoryStreamFeedIterator(() => FilterMetadata<object, UserDefinedFunctionProperties>(_catalog.UdfProperties, queryText), "UserDefinedFunctions", () => _c.CurrentSessionToken);
+        => CorePortDefaults.FeedIterators.CreateStream(() => FilterMetadata<object, UserDefinedFunctionProperties>(_catalog.UdfProperties, queryText), "UserDefinedFunctions", () => _c.CurrentSessionToken);
 
     public override FeedIterator GetUserDefinedFunctionQueryStreamIterator(
         QueryDefinition queryDefinition, string? continuationToken = null, QueryRequestOptions? requestOptions = null)
-        => new InMemoryStreamFeedIterator(() => FilterMetadata<object, UserDefinedFunctionProperties>(_catalog.UdfProperties, queryDefinition), "UserDefinedFunctions", () => _c.CurrentSessionToken);
+        => CorePortDefaults.FeedIterators.CreateStream(() => FilterMetadata<object, UserDefinedFunctionProperties>(_catalog.UdfProperties, queryDefinition), "UserDefinedFunctions", () => _c.CurrentSessionToken);
 
     public static void EnrichStoredProcedureSystemProperties(StoredProcedureProperties props)
     {
@@ -224,7 +223,7 @@ internal sealed class InMemoryScripts : Microsoft.Azure.Cosmos.Scripts.Scripts
 
     private static List<TResult> FilterMetadata<TResult, TValue>(Dictionary<string, TValue> dict, QueryDefinition? queryDefinition)
     {
-        var parameters = queryDefinition is not null ? CosmosSdkIntrospector.ExtractQueryParameters(queryDefinition) : null;
+        var parameters = queryDefinition is not null ? CorePortDefaults.SdkMapper.ExtractQueryParameters(queryDefinition) : null;
         return Application.Query.MetadataSqlQueryExecutor.Execute<TResult, TValue>(dict.Values, queryDefinition?.QueryText, parameters);
     }
 }

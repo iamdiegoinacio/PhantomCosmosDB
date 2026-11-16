@@ -1,7 +1,7 @@
 #nullable enable
 using System.Collections.Concurrent;
 using System.Collections.ObjectModel;
-using Phantom.CosmosDB.Core.Infrastructure.HttpGateway;
+using Phantom.CosmosDB.Core.Application.Contracts;
 using Microsoft.Azure.Cosmos;
 
 namespace Phantom.CosmosDB.Core;
@@ -11,12 +11,12 @@ namespace Phantom.CosmosDB.Core;
 /// </summary>
 public sealed class InMemoryDatabaseResult
 {
-    private readonly DynamicContainerRegistry _registry;
+    private readonly IDynamicContainerRegistry _registry;
     private readonly ConcurrentDictionary<string, string> _containerKeys;
 
     internal InMemoryDatabaseResult(
         string databaseName,
-        DynamicContainerRegistry registry,
+        IDynamicContainerRegistry registry,
         ConcurrentDictionary<string, string> containerKeys)
     {
         DatabaseName = databaseName;

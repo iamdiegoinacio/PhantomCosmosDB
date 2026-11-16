@@ -4,13 +4,11 @@ using Phantom.CosmosDB.Core.Application.Query;
 using Phantom.CosmosDB.Core.Application.Query.Evaluation;
 using Phantom.CosmosDB.Core.Domain.Primitives;
 using Phantom.CosmosDB.Core.Domain.Validation;
-using Phantom.CosmosDB.Core.Infrastructure.SdkInterop;
-using Phantom.CosmosDB.Core.Infrastructure.Storage;
+using Phantom.CosmosDB.Core.Application.Contracts;
 using Microsoft.Azure.Cosmos;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using static Phantom.CosmosDB.Core.Domain.Primitives.ContainerConstants;
-using CosmosResponseFactory = Phantom.CosmosDB.Core.Infrastructure.SdkInterop.CosmosResponseFactory;
 
 namespace Phantom.CosmosDB.Core.Application.Patch;
 
@@ -25,8 +23,8 @@ internal static class DocumentPatchEngine
         PartitionKey partitionKey,
         IReadOnlyList<PatchOperation> patchOperations,
         PatchItemRequestOptions? requestOptions,
-        InMemoryItemStore store,
-        InMemoryChangeFeedLog changeFeedLog,
+        IDocumentStore store,
+        IChangeFeedLog changeFeedLog,
         string containerId,
         IReadOnlyList<string> partitionKeyPaths,
         ContainerProperties containerProperties,
@@ -112,7 +110,7 @@ internal static class DocumentPatchEngine
                     etag = ETagValue.GenerateNextString();
                     store.Etags[key] = etag;
                     store.Timestamps[key] = DateTimeOffset.UtcNow;
-                    var enriched = InMemoryItemStore.EnrichWithSystemProperties(
+                    var enriched = store.EnrichSystemProperties(
                         containerId, updatedJson, etag, store.Timestamps[key]);
                     store.Items[key] = enriched;
                 }
@@ -122,19 +120,19 @@ internal static class DocumentPatchEngine
                 etag = ETagValue.GenerateNextString();
                 store.Etags[key] = etag;
                 store.Timestamps[key] = DateTimeOffset.UtcNow;
-                var enriched = InMemoryItemStore.EnrichWithSystemProperties(
+                var enriched = store.EnrichSystemProperties(
                     containerId, updatedJson, etag, store.Timestamps[key]);
                 store.Items[key] = enriched;
             }
             var enrichedJson = store.Items[key];
 
-            InMemoryItemStore.TrackBatchWrite(key);
+            store.TrackWrite(key);
             executePostTriggers(requestOptions, JsonParseHelpers.ParseJson(enrichedJson), "Replace");
             changeFeedLog.RecordChangeFeed(id, pk, store.Items[key]);
 
             var suppressContent = requestOptions?.EnableContentResponseOnWrite == false;
             var result = JsonConvert.DeserializeObject<T>(enrichedJson, jsonSettings)!;
-            return CosmosResponseFactory.CreateItemResponse(
+            return CorePortDefaults.SdkMapper.CreateItemResponse(
                 result, HttpStatusCode.OK, changeFeedLog.CurrentSessionToken, etag, suppressContent);
         }
         finally
@@ -148,8 +146,8 @@ internal static class DocumentPatchEngine
         PartitionKey partitionKey,
         IReadOnlyList<PatchOperation> patchOperations,
         PatchItemRequestOptions? requestOptions,
-        InMemoryItemStore store,
-        InMemoryChangeFeedLog changeFeedLog,
+        IDocumentStore store,
+        IChangeFeedLog changeFeedLog,
         string containerId,
         IReadOnlyList<string> partitionKeyPaths,
         ContainerProperties containerProperties,
@@ -163,7 +161,7 @@ internal static class DocumentPatchEngine
 
         if (patchOperations is null || patchOperations.Count == 0 || patchOperations.Count > 10)
         {
-            return CosmosResponseFactory.CreateResponseMessage(
+            return CorePortDefaults.SdkMapper.CreateResponseMessage(
                 HttpStatusCode.BadRequest, changeFeedLog.CurrentSessionToken);
         }
 
@@ -173,7 +171,7 @@ internal static class DocumentPatchEngine
         }
         catch (CosmosException)
         {
-            return CosmosResponseFactory.CreateResponseMessage(
+            return CorePortDefaults.SdkMapper.CreateResponseMessage(
                 HttpStatusCode.BadRequest, changeFeedLog.CurrentSessionToken);
         }
 
@@ -187,13 +185,13 @@ internal static class DocumentPatchEngine
             if (!store.Items.TryGetValue(key, out var existingJson) || store.IsExpired(key, defaultTimeToLive))
             {
                 store.EvictIfExpired(key, defaultTimeToLive, partitionKeyPaths, changeFeedLog);
-                return CosmosResponseFactory.CreateResponseMessage(
+                return CorePortDefaults.SdkMapper.CreateResponseMessage(
                     HttpStatusCode.NotFound, changeFeedLog.CurrentSessionToken);
             }
 
             if (!store.CheckIfMatchStream(requestOptions, key))
             {
-                return CosmosResponseFactory.CreateResponseMessage(
+                return CorePortDefaults.SdkMapper.CreateResponseMessage(
                     HttpStatusCode.PreconditionFailed, changeFeedLog.CurrentSessionToken);
             }
 
@@ -214,7 +212,7 @@ internal static class DocumentPatchEngine
                         treatUndefinedAsNull: true);
                     if (!matches)
                     {
-                        return CosmosResponseFactory.CreateResponseMessage(
+                        return CorePortDefaults.SdkMapper.CreateResponseMessage(
                             HttpStatusCode.PreconditionFailed, changeFeedLog.CurrentSessionToken);
                     }
                 }
@@ -228,19 +226,19 @@ internal static class DocumentPatchEngine
             }
             catch (CosmosException ex)
             {
-                return CosmosResponseFactory.CreateResponseMessage(
+                return CorePortDefaults.SdkMapper.CreateResponseMessage(
                     ex.StatusCode, changeFeedLog.CurrentSessionToken, subStatusCode: ex.SubStatusCode);
             }
 
             var updatedJson = jObj.ToString(Formatting.None);
             if (!DocumentValidator.IsDocumentSizeValid(updatedJson))
             {
-                return CosmosResponseFactory.CreateResponseMessage(
+                return CorePortDefaults.SdkMapper.CreateResponseMessage(
                     HttpStatusCode.RequestEntityTooLarge, changeFeedLog.CurrentSessionToken);
             }
             if (!DocumentValidator.IsPerItemTtlValid(jObj))
             {
-                return CosmosResponseFactory.CreateResponseMessage(
+                return CorePortDefaults.SdkMapper.CreateResponseMessage(
                     HttpStatusCode.BadRequest, changeFeedLog.CurrentSessionToken);
             }
 
@@ -256,7 +254,7 @@ internal static class DocumentPatchEngine
                     if (!UniqueKeyValidator.ValidateUniqueKeysStream(
                         containerProperties.UniqueKeyPolicy, store.Items, jObj, pk, excludeItemId: id))
                     {
-                        return CosmosResponseFactory.CreateResponseMessage(
+                        return CorePortDefaults.SdkMapper.CreateResponseMessage(
                             HttpStatusCode.Conflict,
                             changeFeedLog.CurrentSessionToken,
                             subStatusCode: CosmosSubStatusCodes.UniqueKeyConstraintViolation);
@@ -264,7 +262,7 @@ internal static class DocumentPatchEngine
                     etag = ETagValue.GenerateNextString();
                     store.Etags[key] = etag;
                     store.Timestamps[key] = DateTimeOffset.UtcNow;
-                    var enriched = InMemoryItemStore.EnrichWithSystemProperties(
+                    var enriched = store.EnrichSystemProperties(
                         containerId, updatedJson, etag, store.Timestamps[key]);
                     store.Items[key] = enriched;
                 }
@@ -274,13 +272,13 @@ internal static class DocumentPatchEngine
                 etag = ETagValue.GenerateNextString();
                 store.Etags[key] = etag;
                 store.Timestamps[key] = DateTimeOffset.UtcNow;
-                var enriched = InMemoryItemStore.EnrichWithSystemProperties(
+                var enriched = store.EnrichSystemProperties(
                     containerId, updatedJson, etag, store.Timestamps[key]);
                 store.Items[key] = enriched;
             }
             var enrichedJson = store.Items[key];
 
-            InMemoryItemStore.TrackBatchWrite(key);
+            store.TrackWrite(key);
             try
             {
                 executePostTriggers(requestOptions, JsonParseHelpers.ParseJson(enrichedJson), "Replace");
@@ -294,7 +292,7 @@ internal static class DocumentPatchEngine
                 throw;
             }
 
-            return CosmosResponseFactory.CreateResponseMessage(
+            return CorePortDefaults.SdkMapper.CreateResponseMessage(
                 HttpStatusCode.OK,
                 changeFeedLog.CurrentSessionToken,
                 requestOptions?.EnableContentResponseOnWrite == false ? null : enrichedJson,

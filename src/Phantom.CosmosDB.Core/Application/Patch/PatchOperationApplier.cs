@@ -1,7 +1,6 @@
 #nullable enable
 using System.Net;
 using System.Text;
-using Phantom.CosmosDB.Core.Infrastructure.SdkInterop;
 using Microsoft.Azure.Cosmos;
 using Newtonsoft.Json.Linq;
 using static Phantom.CosmosDB.Core.Domain.Primitives.ContainerConstants;
@@ -40,7 +39,7 @@ internal static class PatchOperationApplier
             {
                 case PatchOperationType.Add:
                 {
-                    var value = CosmosSdkIntrospector.GetPatchValue(operation);
+                    var value = CorePortDefaults.SdkMapper.GetPatchValue(operation);
                     var newToken = value is not null ? JToken.FromObject(value) : JValue.CreateNull();
 
                     if (propertyName == "-" && rawParent is JArray appendArray)
@@ -66,7 +65,7 @@ internal static class PatchOperationApplier
                 }
                 case PatchOperationType.Set:
                 {
-                    var value = CosmosSdkIntrospector.GetPatchValue(operation);
+                    var value = CorePortDefaults.SdkMapper.GetPatchValue(operation);
                     var newToken = value is not null ? JToken.FromObject(value) : JValue.CreateNull();
                     if (int.TryParse(propertyName, out var idx) && rawParent is JArray arr)
                     {
@@ -86,7 +85,7 @@ internal static class PatchOperationApplier
                 }
                 case PatchOperationType.Replace:
                 {
-                    var value = CosmosSdkIntrospector.GetPatchValue(operation);
+                    var value = CorePortDefaults.SdkMapper.GetPatchValue(operation);
                     var newToken = value is not null ? JToken.FromObject(value) : JValue.CreateNull();
                     if (int.TryParse(propertyName, out var idx) && rawParent is JArray arr)
                     {
@@ -134,7 +133,7 @@ internal static class PatchOperationApplier
                 }
                 case PatchOperationType.Move:
                 {
-                    var sourcePath = CosmosSdkIntrospector.GetPatchSourcePath(operation);
+                    var sourcePath = CorePortDefaults.SdkMapper.GetPatchSourcePath(operation);
                     if (sourcePath is not null)
                     {
                         // Reject when destination is a child of source (e.g. move /nested → /nested/child)
@@ -166,7 +165,7 @@ internal static class PatchOperationApplier
                 }
                 case PatchOperationType.Increment:
                 {
-                    var incrementValue = CosmosSdkIntrospector.GetPatchValue(operation);
+                    var incrementValue = CorePortDefaults.SdkMapper.GetPatchValue(operation);
                     if (incrementValue is not null)
                     {
                         var parent = rawParent as JObject ?? jObj;

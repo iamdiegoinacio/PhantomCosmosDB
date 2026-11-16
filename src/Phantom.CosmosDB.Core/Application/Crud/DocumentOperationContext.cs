@@ -1,5 +1,5 @@
 #nullable enable
-using Phantom.CosmosDB.Core.Infrastructure.Storage;
+using Phantom.CosmosDB.Core.Application.Contracts;
 using Microsoft.Azure.Cosmos;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
@@ -17,8 +17,8 @@ internal delegate JObject? PostTriggerExecutor(ItemRequestOptions? requestOption
 /// Created per operation so that container-level changes (TTL, properties) are always observed.
 /// </summary>
 internal sealed record DocumentOperationContext(
-    InMemoryItemStore Store,
-    InMemoryChangeFeedLog ChangeFeedLog,
+    IDocumentStore Store,
+    IChangeFeedLog ChangeFeedLog,
     string ContainerId,
     IReadOnlyList<string> PartitionKeyPaths,
     ContainerProperties ContainerProperties,

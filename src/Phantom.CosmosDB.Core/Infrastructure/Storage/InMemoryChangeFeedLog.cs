@@ -1,4 +1,5 @@
 #nullable enable
+using Phantom.CosmosDB.Core.Application.Contracts;
 using Phantom.CosmosDB.Core.Domain.Validation;
 using Phantom.CosmosDB.Core.Infrastructure.SdkInterop;
 using Microsoft.Azure.Cosmos;
@@ -11,7 +12,7 @@ namespace Phantom.CosmosDB.Core.Infrastructure.Storage;
 /// Thread-safe append-only change feed log with bounded capacity, LSN generation,
 /// session token tracking, and delete tombstone formatting.
 /// </summary>
-internal sealed class InMemoryChangeFeedLog
+internal sealed class InMemoryChangeFeedLog : IChangeFeedLog
 {
     private readonly List<(DateTimeOffset Timestamp, string Id, string PartitionKey, string Json, bool IsDelete)> _entries = new();
     private readonly object _lock = new();

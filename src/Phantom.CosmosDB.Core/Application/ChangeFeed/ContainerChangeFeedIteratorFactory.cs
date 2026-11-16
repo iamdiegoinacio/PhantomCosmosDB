@@ -1,10 +1,7 @@
 #nullable enable
-using Phantom.CosmosDB.Core.Infrastructure.FeedIterators;
-using Phantom.CosmosDB.Core.Infrastructure.SdkInterop;
-using Phantom.CosmosDB.Core.Infrastructure.Storage;
+using Phantom.CosmosDB.Core.Application.Contracts;
 using Microsoft.Azure.Cosmos;
 using Newtonsoft.Json;
-using CosmosResponseFactory = Phantom.CosmosDB.Core.Infrastructure.SdkInterop.CosmosResponseFactory;
 
 namespace Phantom.CosmosDB.Core.Application.ChangeFeed;
 
@@ -14,7 +11,7 @@ namespace Phantom.CosmosDB.Core.Application.ChangeFeed;
 internal static class ContainerChangeFeedIteratorFactory
 {
     public static FeedIterator<T> CreateTypedIterator<T>(
-        InMemoryChangeFeedLog changeFeedLog,
+        IChangeFeedLog changeFeedLog,
         ChangeFeedStartFrom changeFeedStartFrom,
         ChangeFeedMode changeFeedMode,
         ChangeFeedRequestOptions? changeFeedRequestOptions,
@@ -22,7 +19,7 @@ internal static class ContainerChangeFeedIteratorFactory
     {
         var pageSize = changeFeedRequestOptions?.PageSizeHint;
         var typeName = changeFeedStartFrom.GetType().Name;
-        var feedRange = CosmosSdkIntrospector.ExtractFeedRangeFromStartFrom(changeFeedStartFrom);
+        var feedRange = CorePortDefaults.SdkMapper.ExtractFeedRangeFromStartFrom(changeFeedStartFrom);
 
         if (typeName.Contains("Now", StringComparison.OrdinalIgnoreCase) ||
             typeName.Contains("Time", StringComparison.OrdinalIgnoreCase))
@@ -34,7 +31,7 @@ internal static class ContainerChangeFeedIteratorFactory
             }
             else
             {
-                var startTime = CosmosSdkIntrospector.ExtractStartTime(changeFeedStartFrom);
+                var startTime = CorePortDefaults.SdkMapper.ExtractStartTime(changeFeedStartFrom);
                 if (startTime.HasValue)
                     capturedTimestamp = new DateTimeOffset(startTime.Value, TimeSpan.Zero);
             }
@@ -42,10 +39,10 @@ internal static class ContainerChangeFeedIteratorFactory
             var isNowStart = typeName.Contains("Now", StringComparison.OrdinalIgnoreCase);
             var ts = capturedTimestamp;
             var capturedRange = feedRange;
-            return new InMemoryFeedIterator<T>(() =>
+            return CorePortDefaults.FeedIterators.CreateLazy<T>(() =>
             {
                 var entries = changeFeedLog.GetFilteredEntries(ts, isNowStart);
-                entries = FeedRangeCalculator.FilterChangeFeedEntriesByFeedRange(entries, capturedRange);
+                entries = CorePortDefaults.SdkMapper.FilterChangeFeedEntriesByFeedRange(entries, capturedRange);
 
                 if (changeFeedMode == ChangeFeedMode.Incremental)
                 {
@@ -59,7 +56,7 @@ internal static class ContainerChangeFeedIteratorFactory
         }
 
         var eagerEntries = changeFeedLog.GetSnapshot();
-        eagerEntries = FeedRangeCalculator.FilterChangeFeedEntriesByFeedRange(eagerEntries, feedRange);
+        eagerEntries = CorePortDefaults.SdkMapper.FilterChangeFeedEntriesByFeedRange(eagerEntries, feedRange);
 
         if (changeFeedMode == ChangeFeedMode.Incremental)
         {
@@ -69,11 +66,11 @@ internal static class ContainerChangeFeedIteratorFactory
         var items = eagerEntries
             .Select(entry => JsonConvert.DeserializeObject<T>(entry.Json, jsonSettings)!)
             .ToList();
-        return new InMemoryFeedIterator<T>(items, pageSize);
+        return CorePortDefaults.FeedIterators.CreateTyped(items, pageSize);
     }
 
     public static FeedIterator<T> CreateCheckpointIterator<T>(
-        InMemoryChangeFeedLog changeFeedLog,
+        IChangeFeedLog changeFeedLog,
         long checkpoint,
         JsonSerializerSettings jsonSettings)
     {
@@ -81,23 +78,23 @@ internal static class ContainerChangeFeedIteratorFactory
             .Skip((int)checkpoint)
             .Select(entry => JsonConvert.DeserializeObject<T>(entry.Json, jsonSettings)!)
             .ToList();
-        return new InMemoryFeedIterator<T>(items);
+        return CorePortDefaults.FeedIterators.CreateTyped(items, null);
     }
 
     public static FeedIterator CreateStreamIterator(
-        InMemoryChangeFeedLog changeFeedLog,
+        IChangeFeedLog changeFeedLog,
         ChangeFeedStartFrom changeFeedStartFrom,
         ChangeFeedMode changeFeedMode,
         ChangeFeedRequestOptions? changeFeedRequestOptions,
         Func<string> getSessionToken)
     {
-        var feedRange = CosmosSdkIntrospector.ExtractFeedRangeFromStartFrom(changeFeedStartFrom);
+        var feedRange = CorePortDefaults.SdkMapper.ExtractFeedRangeFromStartFrom(changeFeedStartFrom);
         var pageSizeHint = changeFeedRequestOptions?.PageSizeHint;
         var creationTime = DateTimeOffset.UtcNow;
-        return CosmosResponseFactory.CreateStreamFeedIteratorFromFactory(() =>
+        return CorePortDefaults.FeedIterators.CreateStreamFromFactory(() =>
         {
             var entries = changeFeedLog.FilterByStartFrom(changeFeedStartFrom, creationTime);
-            entries = FeedRangeCalculator.FilterChangeFeedEntriesByFeedRange(entries, feedRange);
+            entries = CorePortDefaults.SdkMapper.FilterChangeFeedEntriesByFeedRange(entries, feedRange);
 
             if (changeFeedMode == ChangeFeedMode.Incremental)
             {

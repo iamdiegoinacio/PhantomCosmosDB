@@ -5,7 +5,7 @@ using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using Phantom.CosmosDB.Core.Domain.Primitives;
 using Phantom.CosmosDB.Core.Domain.Validation;
-using Phantom.CosmosDB.Core.Infrastructure.Storage;
+using Phantom.CosmosDB.Core.Application.Contracts;
 
 namespace Phantom.CosmosDB.Core.Application.Crud;
 
@@ -66,7 +66,7 @@ internal static class DocumentCrudEngine
                     return DocumentOperationResult.Failure(HttpStatusCode.Conflict, errorMessage: $"Entity with id '{itemId}' already exists.");
             }
 
-            InMemoryItemStore.TrackBatchWrite(key);
+            store.TrackWrite(key);
             store.AddInsertionOrder(key);
             var committed = DocumentWriteCommitter.Write(context, key, json);
 
@@ -168,7 +168,7 @@ internal static class DocumentCrudEngine
                 : null;
             if (!isExisting) store.AddInsertionOrder(key);
             var committed = DocumentWriteCommitter.Write(context, key, json);
-            InMemoryItemStore.TrackBatchWrite(key);
+            store.TrackWrite(key);
 
             try
             {
@@ -187,7 +187,7 @@ internal static class DocumentCrudEngine
         }, cancellationToken);
     }
 
-    private static void RollbackWrite(InMemoryItemStore store, (string Id, string PartitionKey) key, EntrySnapshot? previous)
+    private static void RollbackWrite(IDocumentStore store, (string Id, string PartitionKey) key, EntrySnapshot? previous)
     {
         if (previous.HasValue)
             DocumentWriteCommitter.Restore(store, key, previous.Value);
@@ -251,7 +251,7 @@ internal static class DocumentCrudEngine
 
             var previous = DocumentWriteCommitter.Capture(store, key, existingJson);
             var committed = DocumentWriteCommitter.Write(context, key, json);
-            InMemoryItemStore.TrackBatchWrite(key);
+            store.TrackWrite(key);
 
             try
             {
@@ -296,7 +296,7 @@ internal static class DocumentCrudEngine
 
             var previous = DocumentWriteCommitter.Capture(store, key, existingJson);
             DocumentWriteCommitter.Remove(store, key);
-            InMemoryItemStore.TrackBatchWrite(key);
+            store.TrackWrite(key);
 
             try
             {
