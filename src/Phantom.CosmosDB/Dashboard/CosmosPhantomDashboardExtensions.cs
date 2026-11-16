@@ -30,10 +30,7 @@ public static class CosmosPhantomDashboardExtensions
         }
 
         var normalizedPrefix = NormalizePrefix(routePrefix);
-        return app.Map(normalizedPrefix, branch =>
-        {
-            branch.UseMiddleware<CosmosPhantomDashboardMiddleware>(normalizedPrefix);
-        });
+        return app.UseMiddleware<CosmosPhantomDashboardMiddleware>(normalizedPrefix);
     }
 
     private static string NormalizePrefix(string routePrefix)

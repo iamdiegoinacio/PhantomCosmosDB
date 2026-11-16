@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
@@ -37,9 +38,15 @@ internal sealed class CosmosPhantomDashboardMiddleware
         IHostEnvironment environment,
         ICosmosDbSeederService? seederService = null)
     {
+        if (!context.Request.Path.StartsWithSegments(_routePrefix, StringComparison.OrdinalIgnoreCase, out var remaining))
+        {
+            await _next(context);
+            return;
+        }
+
         var reqCtx = new DashboardRequestContext(
             context,
-            context.Request.Path.Value ?? string.Empty,
+            remaining.Value ?? string.Empty,
             context.Request.Method,
             _routePrefix,
             registry,
