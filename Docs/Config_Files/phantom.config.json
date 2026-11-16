@@ -1,0 +1,48 @@
+{
+  "CosmosDbEmulator": {
+    "DatabaseName": "LojaDb",
+    "Containers": [
+      {
+        "Name": "Produtos",
+        "PartitionKeyPath": "/categoria",
+        "DefaultTimeToLive": -1,
+        "Throughput": 400,
+        "UniqueKeys": [ [ "/sku" ] ],
+        "ComputedProperties": [
+          {
+            "Name": "nomeLower",
+            "Query": "SELECT VALUE LOWER(c.nome) FROM c"
+          }
+        ],
+        "IndexingPolicy": {
+          "IndexingMode": "Consistent",
+          "Automatic": true,
+          "ExcludedPaths": [ "/\"_etag\"/?" ],
+          "CompositeIndexes": [
+            [
+              { "Path": "/categoria", "Order": "ascending" },
+              { "Path": "/preco", "Order": "descending" }
+            ]
+          ]
+        }
+      }
+    ]
+  },
+  "CosmosChaosEngineering": {
+    "EnableRandomThrottling": false,
+    "ThrottlingProbability": 0.2,
+    "SimulateHighLatency": false,
+    "MinLatencyMs": 200,
+    "MaxLatencyMs": 500,
+    "RetryAfterMs": 150,
+    "Simulate429_TooManyRequests": false,
+    "Simulate503_ServiceUnavailable": false,
+    "Simulate408_RequestTimeout": false,
+    "Simulate403_Forbidden": false,
+    "Simulate401_Unauthorized": false,
+    "Simulate409_Conflict": false,
+    "Simulate413_EntityTooLarge": false,
+    "Simulate412_PreconditionFailed": false,
+    "Simulate400_BadRequest": false
+  }
+}
