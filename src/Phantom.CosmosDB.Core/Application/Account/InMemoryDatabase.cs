@@ -2,6 +2,7 @@
 #pragma warning disable CS0618 // InMemoryCosmosClient is obsolete but InMemoryDatabase still depends on it
 using System.Collections.Concurrent;
 using System.Net;
+using Phantom.CosmosDB.Core.Application.Account;
 using Phantom.CosmosDB.Core.Domain.Validation;
 using CosmosResponseFactory = Phantom.CosmosDB.Core.Infrastructure.SdkInterop.CosmosResponseFactory;
 using Microsoft.Azure.Cosmos;
@@ -17,7 +18,7 @@ internal class InMemoryDatabase : Database
 {
     private readonly ConcurrentDictionary<string, InMemoryContainer> _containers = new();
     private readonly ConcurrentDictionary<string, bool> _explicitlyCreatedContainers = new();
-    private readonly ConcurrentDictionary<string, InMemoryUser> _users = new();
+    private readonly InMemoryUserService _userService = new();
     private readonly InMemoryCosmosClient? _client;
     private int _throughput = 400;
 
@@ -349,12 +350,7 @@ internal class InMemoryDatabase : Database
         RequestOptions? requestOptions = null,
         CancellationToken cancellationToken = default)
     {
-        foreach (var container in _containers.Values)
-            container.DeleteContainerAsync().GetAwaiter().GetResult();
-        _containers.Clear();
-        _explicitlyCreatedContainers.Clear();
-        _users.Clear();
-        _client?.RemoveDatabase(Id);
+        ClearDatabaseResources();
         return Task.FromResult(CosmosResponseFactory.CreateDatabaseResponse(this, HttpStatusCode.NoContent));
     }
 
@@ -362,13 +358,18 @@ internal class InMemoryDatabase : Database
         RequestOptions? requestOptions = null,
         CancellationToken cancellationToken = default)
     {
+        ClearDatabaseResources();
+        return Task.FromResult(CosmosResponseFactory.CreateResponseMessage(HttpStatusCode.NoContent, "0:0#0"));
+    }
+
+    private void ClearDatabaseResources()
+    {
         foreach (var container in _containers.Values)
             container.DeleteContainerAsync().GetAwaiter().GetResult();
         _containers.Clear();
         _explicitlyCreatedContainers.Clear();
-        _users.Clear();
+        _userService.Clear();
         _client?.RemoveDatabase(Id);
-        return Task.FromResult(CosmosResponseFactory.CreateResponseMessage(HttpStatusCode.NoContent, "0:0#0"));
     }
 
     public override Task<int?> ReadThroughputAsync(CancellationToken cancellationToken = default)
@@ -427,54 +428,25 @@ internal class InMemoryDatabase : Database
     public override ContainerBuilder DefineContainer(string name, string partitionKeyPath)
         => new ContainerBuilder(this, name, partitionKeyPath);
 
-    public override User GetUser(string id)
-    {
-        if (_users.TryGetValue(id, out var existing))
-            return existing;
-
-        return new InMemoryUser(id, () => _users.TryRemove(id, out _), _users);
-    }
+    public override User GetUser(string id) => _userService.GetUser(id);
 
     public override Task<UserResponse> CreateUserAsync(
         string id,
         RequestOptions? requestOptions = null,
         CancellationToken cancellationToken = default)
-    {
-        var user = new InMemoryUser(id, () => _users.TryRemove(id, out _));
-        if (!_users.TryAdd(id, user))
-            throw InMemoryCosmosException.Create($"User '{id}' already exists.", HttpStatusCode.Conflict, 0, string.Empty, 0);
-
-        return Task.FromResult(CosmosResponseFactory.CreateUserResponse(user, new UserProperties(id), HttpStatusCode.Created));
-    }
+        => _userService.CreateUserAsync(id);
 
     public override Task<UserResponse> UpsertUserAsync(
         string id,
         RequestOptions? requestOptions = null,
         CancellationToken cancellationToken = default)
-    {
-        var created = false;
-        var user = _users.GetOrAdd(id, uid =>
-        {
-            created = true;
-            return new InMemoryUser(uid, () => _users.TryRemove(uid, out _));
-        });
-
-        return Task.FromResult(CosmosResponseFactory.CreateUserResponse(
-            user,
-            new UserProperties(id),
-            created ? HttpStatusCode.Created : HttpStatusCode.OK));
-    }
+        => _userService.UpsertUserAsync(id);
 
     public override FeedIterator<T> GetUserQueryIterator<T>(
         string? queryText = null,
         string? continuationToken = null,
         QueryRequestOptions? requestOptions = null)
-    {
-        return new InMemoryFeedIterator<T>(
-            () => _users.Values
-                .Select(u => (T)(object)new UserProperties(u.Id))
-                .ToList());
-    }
+        => new InMemoryFeedIterator<T>(() => _userService.QueryUsers<T>());
 
     public override FeedIterator<T> GetUserQueryIterator<T>(
         QueryDefinition queryDefinition,

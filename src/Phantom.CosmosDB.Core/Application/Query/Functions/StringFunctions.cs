@@ -1,335 +1,261 @@
 #nullable enable
 using System.Globalization;
 using System.Text.RegularExpressions;
-using Phantom.CosmosDB.Core.Domain.Primitives;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
+using Phantom.CosmosDB.Core.Domain.Primitives;
 
 namespace Phantom.CosmosDB.Core.Application.Query.Functions;
 
 /// <summary>
-/// Evaluates Cosmos SQL string and type-conversion functions (<c>STARTSWITH</c>, <c>ENDSWITH</c>,
-/// <c>CONTAINS</c>, <c>CONCAT</c>, <c>LENGTH</c>, <c>LOWER</c>, <c>UPPER</c>, <c>TRIM</c>,
-/// <c>SUBSTRING</c>, <c>REPLACE</c>, <c>INDEX_OF</c>, <c>REGEXMATCH</c>, <c>STRINGTO*</c>, <c>TO*</c>, etc.).
+/// Evaluates Cosmos SQL string and type-conversion functions via a declarative handler registry.
 /// </summary>
 internal static class StringFunctions
 {
+    private static readonly IReadOnlyDictionary<string, Func<object?[], object?>> Registry =
+        new Dictionary<string, Func<object?[], object?>>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["STARTSWITH"] = args => MatchPrefixSuffixContains(args, static (s, p, cmp) => s.StartsWith(p, cmp)),
+            ["ENDSWITH"] = args => MatchPrefixSuffixContains(args, static (s, p, cmp) => s.EndsWith(p, cmp)),
+            ["CONTAINS"] = args => MatchPrefixSuffixContains(args, static (s, p, cmp) => s.Contains(p, cmp)),
+            ["CONCAT"] = args => args.Any(static a => a is null or UndefinedValue or not string)
+                ? UndefinedValue.Instance
+                : string.Concat(args.Cast<string>()),
+            ["LENGTH"] = args => args.Length == 0 ? null : args[0] is string s ? (long)s.Length : UndefinedValue.Instance,
+            ["LOWER"] = args => TransformUnaryString(args, static s => s.ToLowerInvariant()),
+            ["UPPER"] = args => TransformUnaryString(args, static s => s.ToUpperInvariant()),
+            ["TRIM"] = args => TransformUnaryString(args, static s => s.Trim()),
+            ["LTRIM"] = args => TransformUnaryString(args, static s => s.TrimStart()),
+            ["RTRIM"] = args => TransformUnaryString(args, static s => s.TrimEnd()),
+            ["REVERSE"] = args => TransformUnaryString(args, static s => new string(s.Reverse().ToArray())),
+            ["LEFT"] = args => SliceEdge(args, fromStart: true),
+            ["RIGHT"] = args => SliceEdge(args, fromStart: false),
+            ["SUBSTRING"] = Substring,
+            ["REPLACE"] = Replace,
+            ["INDEX_OF"] = IndexOf,
+            ["REGEXMATCH"] = RegexMatch,
+            ["REPLICATE"] = Replicate,
+            ["STRING_EQUALS"] = StringEquals,
+            ["STRINGEQUALS"] = StringEquals,
+            ["STRINGTOARRAY"] = args => ParseJsonToken<JArray>(args),
+            ["STRINGTOOBJECT"] = args => ParseJsonToken<JObject>(args),
+            ["STRINGTOBOOLEAN"] = StringToBoolean,
+            ["STRINGTONULL"] = args => args.Length == 0 ? null
+                : args[0] is null or UndefinedValue ? UndefinedValue.Instance
+                : args[0]?.ToString()?.Trim() == "null" ? null : UndefinedValue.Instance,
+            ["STRINGTONUMBER"] = StringToNumber,
+            ["TOSTRING"] = ToStringValue,
+            ["TONUMBER"] = ToNumberValue,
+            ["TOBOOLEAN"] = ToBooleanValue,
+            ["STRINGJOIN"] = StringJoin,
+            ["STRINGSPLIT"] = StringSplit
+        };
+
     public static bool TryEvaluate(string functionName, object?[] args, out object? result)
     {
-        switch (functionName)
+        if (Registry.TryGetValue(functionName, out var handler))
         {
-            case "STARTSWITH":
-                if (args.Length < 2) { result = false; return true; }
-                if (args[0] is not string swStr || args[1] is not string swPrefix) { result = UndefinedValue.Instance; return true; }
-                var swIc = args.Length >= 3 && string.Equals(args[2]?.ToString(), "true", StringComparison.OrdinalIgnoreCase);
-                result = swStr.StartsWith(swPrefix, swIc ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
-                return true;
-
-            case "ENDSWITH":
-                if (args.Length < 2) { result = false; return true; }
-                if (args[0] is not string ewStr || args[1] is not string ewSuffix) { result = UndefinedValue.Instance; return true; }
-                var ewIc = args.Length >= 3 && string.Equals(args[2]?.ToString(), "true", StringComparison.OrdinalIgnoreCase);
-                result = ewStr.EndsWith(ewSuffix, ewIc ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
-                return true;
-
-            case "CONTAINS":
-                if (args.Length < 2) { result = false; return true; }
-                if (args[0] is not string ctStr || args[1] is not string ctSub) { result = UndefinedValue.Instance; return true; }
-                var ctIc = args.Length >= 3 && string.Equals(args[2]?.ToString(), "true", StringComparison.OrdinalIgnoreCase);
-                result = ctStr.Contains(ctSub, ctIc ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
-                return true;
-
-            case "CONCAT":
-                if (args.Any(static a => a is null or UndefinedValue or not string))
-                {
-                    result = UndefinedValue.Instance;
-                    return true;
-                }
-                result = string.Concat(args.Cast<string>());
-                return true;
-
-            case "LENGTH":
-                if (args.Length == 0) { result = null; return true; }
-                result = args[0] is string lenStr ? (object)(long)lenStr.Length : UndefinedValue.Instance;
-                return true;
-
-            case "LOWER":
-                result = args.Length > 0 ? (args[0] is string sl ? (object)sl.ToLowerInvariant() : UndefinedValue.Instance) : null;
-                return true;
-
-            case "UPPER":
-                result = args.Length > 0 ? (args[0] is string su ? (object)su.ToUpperInvariant() : UndefinedValue.Instance) : null;
-                return true;
-
-            case "TRIM":
-                result = args.Length > 0 ? (args[0] is string st ? (object)st.Trim() : UndefinedValue.Instance) : null;
-                return true;
-
-            case "LTRIM":
-                result = args.Length > 0 ? (args[0] is string slt ? (object)slt.TrimStart() : UndefinedValue.Instance) : null;
-                return true;
-
-            case "RTRIM":
-                result = args.Length > 0 ? (args[0] is string srt ? (object)srt.TrimEnd() : UndefinedValue.Instance) : null;
-                return true;
-
-            case "REVERSE":
-                result = args.Length > 0 ? (args[0] is string rs ? (object)new string(rs.Reverse().ToArray()) : UndefinedValue.Instance) : null;
-                return true;
-
-            case "LEFT":
-                if (args.Length < 2) { result = null; return true; }
-                if (args[0] is not string leftStr) { result = UndefinedValue.Instance; return true; }
-                var leftCount = SqlMathHelpers.ToLong(args[1]);
-                if (!leftCount.HasValue || leftCount.Value < 0) { result = UndefinedValue.Instance; return true; }
-                result = leftStr[..(int)Math.Min(leftCount.Value, leftStr.Length)];
-                return true;
-
-            case "RIGHT":
-                if (args.Length < 2) { result = null; return true; }
-                if (args[0] is not string rightStr) { result = UndefinedValue.Instance; return true; }
-                var rightCount = SqlMathHelpers.ToLong(args[1]);
-                if (!rightCount.HasValue || rightCount.Value < 0) { result = UndefinedValue.Instance; return true; }
-                result = rightStr[Math.Max(0, rightStr.Length - (int)rightCount.Value)..];
-                return true;
-
-            case "SUBSTRING":
-                if (args.Length < 3 || args[0] is not string subStr)
-                {
-                    result = UndefinedValue.Instance;
-                    return true;
-                }
-                var subStart = SqlMathHelpers.ToLong(args[1]);
-                var subLen = SqlMathHelpers.ToLong(args[2]);
-                if (!subStart.HasValue || !subLen.HasValue)
-                {
-                    result = UndefinedValue.Instance;
-                    return true;
-                }
-                var si = (int)Math.Max(0, Math.Min(subStart.Value, subStr.Length));
-                var li = (int)Math.Max(0, Math.Min(subLen.Value, subStr.Length - si));
-                result = subStr.Substring(si, li);
-                return true;
-
-            case "REPLACE":
-                if (args.Length < 3) { result = null; return true; }
-                var repSource = args[0] as string;
-                var repFind = args[1] as string;
-                var repWith = args[2] as string;
-                if (repSource is null || repFind is null || args[2] is not (null or UndefinedValue or string))
-                {
-                    result = UndefinedValue.Instance;
-                    return true;
-                }
-                result = repFind.Length == 0 ? repSource : repSource.Replace(repFind, repWith ?? "");
-                return true;
-
-            case "INDEX_OF":
-                if (args.Length < 2 || args[0] is not string idxStr || args[1] is not string idxSub)
-                {
-                    result = UndefinedValue.Instance;
-                    return true;
-                }
-                if (args.Length >= 3 && double.TryParse(args[2]?.ToString(), NumberStyles.Any, CultureInfo.InvariantCulture, out var startPos))
-                {
-                    var sp = (int)startPos;
-                    if (sp < 0 || sp > idxStr.Length)
-                    {
-                        result = UndefinedValue.Instance;
-                        return true;
-                    }
-                    result = (object)(long)idxStr.IndexOf(idxSub, sp, StringComparison.Ordinal);
-                    return true;
-                }
-                result = (object)(long)idxStr.IndexOf(idxSub, StringComparison.Ordinal);
-                return true;
-
-            case "REGEXMATCH":
-                if (args.Length < 2) { result = false; return true; }
-                if (args[0] is not string rgxInput || args[1] is not string rgxPattern)
-                {
-                    result = UndefinedValue.Instance;
-                    return true;
-                }
-                var options = RegexOptions.None;
-                if (args.Length >= 3)
-                {
-                    var modifiers = args[2]?.ToString() ?? "";
-                    foreach (var ch in modifiers)
-                    {
-                        options |= ch switch
-                        {
-                            'i' => RegexOptions.IgnoreCase,
-                            'm' => RegexOptions.Multiline,
-                            's' => RegexOptions.Singleline,
-                            'x' => RegexOptions.IgnorePatternWhitespace,
-                            _ => RegexOptions.None,
-                        };
-                    }
-                }
-                try
-                {
-                    result = SqlMathHelpers.GetOrCreateRegex(rgxPattern, options).IsMatch(rgxInput);
-                }
-                catch (ArgumentException)
-                {
-                    result = UndefinedValue.Instance;
-                }
-                return true;
-
-            case "REPLICATE":
-                if (args.Length < 2) { result = null; return true; }
-                if (args[0] is not string repStr) { result = UndefinedValue.Instance; return true; }
-                var count = SqlMathHelpers.ToLong(args[1]);
-                if (!count.HasValue || count.Value < 0 || count.Value > 10000)
-                {
-                    result = UndefinedValue.Instance;
-                    return true;
-                }
-                result = count.Value == 0 ? "" : string.Concat(Enumerable.Repeat(repStr, (int)count.Value));
-                return true;
-
-            case "STRING_EQUALS":
-            case "STRINGEQUALS":
-                if (args.Length < 2 || args[0] is not string se1 || args[1] is not string se2)
-                {
-                    result = UndefinedValue.Instance;
-                    return true;
-                }
-                var seIc = args.Length >= 3 && string.Equals(args[2]?.ToString(), "true", StringComparison.OrdinalIgnoreCase);
-                result = string.Equals(se1, se2, seIc ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
-                return true;
-
-            case "STRINGTOARRAY":
-                if (args.Length == 0) { result = null; return true; }
-                if (args[0] is null or UndefinedValue) { result = UndefinedValue.Instance; return true; }
-                var staStr = args[0]?.ToString();
-                if (staStr is null) { result = UndefinedValue.Instance; return true; }
-                try
-                {
-                    var token = JToken.Parse(staStr);
-                    result = token is JArray ? token : UndefinedValue.Instance;
-                }
-                catch
-                {
-                    result = UndefinedValue.Instance;
-                }
-                return true;
-
-            case "STRINGTOBOOLEAN":
-                if (args.Length == 0) { result = null; return true; }
-                if (args[0] is null or UndefinedValue) { result = UndefinedValue.Instance; return true; }
-                result = args[0]?.ToString()?.Trim() switch
-                {
-                    "true" => true,
-                    "false" => (object)false,
-                    _ => UndefinedValue.Instance,
-                };
-                return true;
-
-            case "STRINGTONULL":
-                if (args.Length == 0) { result = null; return true; }
-                if (args[0] is null or UndefinedValue) { result = UndefinedValue.Instance; return true; }
-                result = args[0]?.ToString()?.Trim() == "null" ? null : UndefinedValue.Instance;
-                return true;
-
-            case "STRINGTONUMBER":
-                if (args.Length == 0) { result = null; return true; }
-                if (args[0] is null or UndefinedValue) { result = UndefinedValue.Instance; return true; }
-                var stnStr = args[0]?.ToString()?.Trim();
-                if (stnStr is null) { result = UndefinedValue.Instance; return true; }
-                if (long.TryParse(stnStr, NumberStyles.Any, CultureInfo.InvariantCulture, out var longVal))
-                {
-                    result = longVal;
-                    return true;
-                }
-                if (double.TryParse(stnStr, NumberStyles.Any, CultureInfo.InvariantCulture, out var doubleVal))
-                {
-                    result = double.IsNaN(doubleVal) || double.IsInfinity(doubleVal) ? UndefinedValue.Instance : doubleVal;
-                    return true;
-                }
-                result = UndefinedValue.Instance;
-                return true;
-
-            case "STRINGTOOBJECT":
-                if (args.Length == 0) { result = null; return true; }
-                if (args[0] is null or UndefinedValue) { result = UndefinedValue.Instance; return true; }
-                var stoStr = args[0]?.ToString();
-                if (stoStr is null) { result = UndefinedValue.Instance; return true; }
-                try
-                {
-                    var token = JToken.Parse(stoStr);
-                    result = token is JObject ? token : UndefinedValue.Instance;
-                }
-                catch
-                {
-                    result = UndefinedValue.Instance;
-                }
-                return true;
-
-            case "TOSTRING":
-            case "ToString":
-                if (args.Length == 0) { result = null; return true; }
-                if (args[0] is null or UndefinedValue) { result = UndefinedValue.Instance; return true; }
-                if (args[0] is bool boolVal) { result = boolVal ? "true" : "false"; return true; }
-                if (args[0] is string or long or int or double or float or decimal) { result = args[0]?.ToString(); return true; }
-                if (args[0] is JArray or JObject) { result = ((JToken)args[0]!).ToString(Formatting.None); return true; }
-                if (args[0] is JValue jv && jv.Type == JTokenType.Null) { result = UndefinedValue.Instance; return true; }
-                result = args[0]?.ToString();
-                return true;
-
-            case "TONUMBER":
-            case "ToNumber":
-                if (args.Length == 0) { result = null; return true; }
-                if (args[0] is null) { result = UndefinedValue.Instance; return true; }
-                if (args[0] is long or double) { result = args[0]; return true; }
-                if (double.TryParse(args[0]?.ToString(), NumberStyles.Any, CultureInfo.InvariantCulture, out var numResult))
-                {
-                    result = numResult;
-                    return true;
-                }
-                result = UndefinedValue.Instance;
-                return true;
-
-            case "TOBOOLEAN":
-            case "ToBoolean":
-                if (args.Length == 0) { result = null; return true; }
-                if (args[0] is bool) { result = args[0]; return true; }
-                if (args[0] != null && bool.TryParse(args[0]?.ToString(), out var boolRes))
-                {
-                    result = boolRes;
-                    return true;
-                }
-                result = UndefinedValue.Instance;
-                return true;
-
-            case "STRINGJOIN":
-                if (args.Length < 2) { result = null; return true; }
-                var separator = args[1]?.ToString();
-                if (separator is null) { result = null; return true; }
-                JArray joinArr;
-                if (args[0] is JArray ja) joinArr = ja;
-                else if (args[0] is string s) { try { joinArr = JArray.Parse(s); } catch { result = null; return true; } }
-                else { result = null; return true; }
-                result = string.Join(separator, joinArr.Select(static t => t.Value<string>()));
-                return true;
-
-            case "STRINGSPLIT":
-                if (args.Length < 2) { result = null; return true; }
-                var splitInput = args[0]?.ToString();
-                var delimiter = args[1]?.ToString();
-                if (splitInput is null || delimiter is null || delimiter.Length == 0)
-                {
-                    result = UndefinedValue.Instance;
-                    return true;
-                }
-                var parts = splitInput.Split(delimiter);
-                result = new JArray(parts.Select(static p => (JToken)p));
-                return true;
-
-            default:
-                result = null;
-                return false;
+            result = handler(args);
+            return true;
         }
+
+        result = null;
+        return false;
+    }
+
+    private static object? MatchPrefixSuffixContains(
+        object?[] args,
+        Func<string, string, StringComparison, bool> predicate)
+    {
+        if (args.Length < 2) return false;
+        if (args[0] is not string str || args[1] is not string target) return UndefinedValue.Instance;
+        var ignoreCase = args.Length >= 3 && string.Equals(args[2]?.ToString(), "true", StringComparison.OrdinalIgnoreCase);
+        return predicate(str, target, ignoreCase ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
+    }
+
+    private static object? TransformUnaryString(object?[] args, Func<string, string> transform)
+        => args.Length == 0 ? null : args[0] is string s ? transform(s) : UndefinedValue.Instance;
+
+    private static object? SliceEdge(object?[] args, bool fromStart)
+    {
+        if (args.Length < 2) return null;
+        if (args[0] is not string str) return UndefinedValue.Instance;
+        var count = SqlMathHelpers.ToLong(args[1]);
+        if (!count.HasValue || count.Value < 0) return UndefinedValue.Instance;
+        return fromStart
+            ? str[..(int)Math.Min(count.Value, str.Length)]
+            : str[Math.Max(0, str.Length - (int)count.Value)..];
+    }
+
+    private static object? Substring(object?[] args)
+    {
+        if (args.Length < 3 || args[0] is not string str) return UndefinedValue.Instance;
+        var start = SqlMathHelpers.ToLong(args[1]);
+        var len = SqlMathHelpers.ToLong(args[2]);
+        if (!start.HasValue || !len.HasValue) return UndefinedValue.Instance;
+
+        var si = (int)Math.Max(0, Math.Min(start.Value, str.Length));
+        var li = (int)Math.Max(0, Math.Min(len.Value, str.Length - si));
+        return str.Substring(si, li);
+    }
+
+    private static object? Replace(object?[] args)
+    {
+        if (args.Length < 3) return null;
+        if (args[0] is not string src || args[1] is not string find || args[2] is not (null or UndefinedValue or string))
+            return UndefinedValue.Instance;
+
+        return find.Length == 0 ? src : src.Replace(find, args[2] as string ?? string.Empty);
+    }
+
+    private static object? IndexOf(object?[] args)
+    {
+        if (args.Length < 2 || args[0] is not string str || args[1] is not string sub)
+            return UndefinedValue.Instance;
+
+        if (args.Length >= 3 && double.TryParse(args[2]?.ToString(), NumberStyles.Any, CultureInfo.InvariantCulture, out var startPos))
+        {
+            var sp = (int)startPos;
+            return sp < 0 || sp > str.Length
+                ? UndefinedValue.Instance
+                : (long)str.IndexOf(sub, sp, StringComparison.Ordinal);
+        }
+
+        return (long)str.IndexOf(sub, StringComparison.Ordinal);
+    }
+
+    private static object? RegexMatch(object?[] args)
+    {
+        if (args.Length < 2) return false;
+        if (args[0] is not string input || args[1] is not string pattern) return UndefinedValue.Instance;
+
+        var options = RegexOptions.None;
+        if (args.Length >= 3)
+        {
+            foreach (var ch in args[2]?.ToString() ?? string.Empty)
+            {
+                options |= ch switch
+                {
+                    'i' => RegexOptions.IgnoreCase,
+                    'm' => RegexOptions.Multiline,
+                    's' => RegexOptions.Singleline,
+                    'x' => RegexOptions.IgnorePatternWhitespace,
+                    _ => RegexOptions.None
+                };
+            }
+        }
+
+        try { return SqlMathHelpers.GetOrCreateRegex(pattern, options).IsMatch(input); }
+        catch (ArgumentException) { return UndefinedValue.Instance; }
+    }
+
+    private static object? Replicate(object?[] args)
+    {
+        if (args.Length < 2) return null;
+        if (args[0] is not string str) return UndefinedValue.Instance;
+        var count = SqlMathHelpers.ToLong(args[1]);
+        if (!count.HasValue || count.Value < 0 || count.Value > 10000) return UndefinedValue.Instance;
+        return count.Value == 0 ? string.Empty : string.Concat(Enumerable.Repeat(str, (int)count.Value));
+    }
+
+    private static object? StringEquals(object?[] args)
+    {
+        if (args.Length < 2 || args[0] is not string s1 || args[1] is not string s2)
+            return UndefinedValue.Instance;
+
+        var ignoreCase = args.Length >= 3 && string.Equals(args[2]?.ToString(), "true", StringComparison.OrdinalIgnoreCase);
+        return string.Equals(s1, s2, ignoreCase ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
+    }
+
+    private static object? ParseJsonToken<TToken>(object?[] args) where TToken : JToken
+    {
+        if (args.Length == 0) return null;
+        if (args[0] is null or UndefinedValue) return UndefinedValue.Instance;
+        var raw = args[0]?.ToString();
+        if (raw is null) return UndefinedValue.Instance;
+
+        try { return JToken.Parse(raw) is TToken typed ? typed : UndefinedValue.Instance; }
+        catch { return UndefinedValue.Instance; }
+    }
+
+    private static object? StringToBoolean(object?[] args)
+    {
+        if (args.Length == 0) return null;
+        if (args[0] is null or UndefinedValue) return UndefinedValue.Instance;
+        return args[0]?.ToString()?.Trim() switch
+        {
+            "true" => true,
+            "false" => false,
+            _ => UndefinedValue.Instance
+        };
+    }
+
+    private static object? StringToNumber(object?[] args)
+    {
+        if (args.Length == 0) return null;
+        if (args[0] is null or UndefinedValue) return UndefinedValue.Instance;
+        var raw = args[0]?.ToString()?.Trim();
+        if (raw is null) return UndefinedValue.Instance;
+
+        if (long.TryParse(raw, NumberStyles.Any, CultureInfo.InvariantCulture, out var longVal))
+            return longVal;
+        if (double.TryParse(raw, NumberStyles.Any, CultureInfo.InvariantCulture, out var doubleVal))
+            return double.IsNaN(doubleVal) || double.IsInfinity(doubleVal) ? UndefinedValue.Instance : doubleVal;
+
+        return UndefinedValue.Instance;
+    }
+
+    private static object? ToStringValue(object?[] args)
+    {
+        if (args.Length == 0) return null;
+        var v = args[0];
+        if (v is null or UndefinedValue) return UndefinedValue.Instance;
+        if (v is bool b) return b ? "true" : "false";
+        if (v is JArray or JObject) return ((JToken)v).ToString(Formatting.None);
+        if (v is JValue { Type: JTokenType.Null }) return UndefinedValue.Instance;
+        return Convert.ToString(v, CultureInfo.InvariantCulture);
+    }
+
+    private static object? ToNumberValue(object?[] args)
+    {
+        if (args.Length == 0) return null;
+        if (args[0] is null) return UndefinedValue.Instance;
+        if (args[0] is long or double) return args[0];
+        return double.TryParse(args[0]?.ToString(), NumberStyles.Any, CultureInfo.InvariantCulture, out var num)
+            ? num
+            : UndefinedValue.Instance;
+    }
+
+    private static object? ToBooleanValue(object?[] args)
+    {
+        if (args.Length == 0) return null;
+        if (args[0] is bool b) return b;
+        return args[0] is not null && bool.TryParse(args[0]?.ToString(), out var parsed)
+            ? parsed
+            : UndefinedValue.Instance;
+    }
+
+    private static object? StringJoin(object?[] args)
+    {
+        if (args.Length < 2) return null;
+        var separator = args[1]?.ToString();
+        if (separator is null) return null;
+
+        JArray arr;
+        if (args[0] is JArray ja) arr = ja;
+        else if (args[0] is string s) { try { arr = JArray.Parse(s); } catch { return null; } }
+        else return null;
+
+        return string.Join(separator, arr.Select(static t => t.Value<string>()));
+    }
+
+    private static object? StringSplit(object?[] args)
+    {
+        if (args.Length < 2) return null;
+        var input = args[0]?.ToString();
+        var delimiter = args[1]?.ToString();
+        if (input is null || string.IsNullOrEmpty(delimiter)) return UndefinedValue.Instance;
+
+        return new JArray(input.Split(delimiter).Select(static p => (JToken)p));
     }
 }
