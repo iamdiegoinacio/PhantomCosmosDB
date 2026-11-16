@@ -8,44 +8,56 @@
 ![Conventional Commits](https://img.shields.io/badge/Conventional%20Commits-1.0.0-%23FE5196?logo=conventionalcommits&logoColor=white)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
-**Phantom.CosmosDB** é um emulador em memória de Azure Cosmos DB e harness de desenvolvimento/testes para .NET. Ele permite desenvolver localmente, testar resiliência e inspecionar documentos sem infraestrutura pesada ou custos de nuvem — usando **exatamente o mesmo código de aplicação** e alternando entre Azure real e memória pela Connection String.
-
-## Principais Recursos
-
-- **Troca transparente via Connection String (`AddCosmosDb`):** usa o `CosmosClient` real da Microsoft em produção e ativa o emulador em memória quando `ConnectionStrings:CosmosDb` aponta para o Phantom (`https://phantom.local/` ou `phantom://in-memory`).
-- **Auto-Seeding automático (`IHostedService`):** lê `Resources/Seeds/*.json` e popula os containers antes da API receber requisições, sem chamadas extras no `Program.cs`.
-- **Chaos Engineering embutido e Live:** injeta latência, throttling (`429`, substatus `3200`) e erros HTTP (`503`, `408`, `400`, `401`, `403`, `409`, `412`, `413`), configurável por arquivo ou ao vivo pelo Dashboard.
-- **PhantomDB Dashboard (`/phantom`):** interface gráfica Web embutida com Visão Geral, Data Explorer & Query Runner SQL, controle live de Chaos, Logs ao vivo e editor de `phantom.config.json`.
-- **Motor de Alta Fidelidade (`Phantom.CosmosDB.Core`):** parser SQL completo, `ORDER BY`, `ComputedProperties`, `CompositeIndexes`, `MultiHash` (até 3 níveis), `UniqueKeys`, `IndexingMode.None` + `EnableScanInQuery`, `TransactionalBatch`, `Bulk`, `ChangeFeed` (`Incremental` e `AllVersionsAndDeletes`), `TTL` e `Sprocs`/`Triggers`/`UDFs`.
+**Phantom.CosmosDB** é um emulador em memória de Azure Cosmos DB e suíte completa de desenvolvimento/testes para .NET 8. Ele permite desenvolver APIs localmente, simular custos, validar queries geoespaciais, testar resiliência com Chaos Engineering e inspecionar dados pelo **PhantomDB Dashboard** — sem Docker, sem emulador pesado e sem custos de nuvem, usando **exatamente o mesmo código de aplicação** e alternando entre Azure real e memória pela Connection String.
 
 ---
 
-## Arquitetura Unificada (`Phantom.CosmosDB.Core`)
+## Principais Recursos e Funcionalidades
 
-1. **`Phantom.CosmosDB.Core`:** Motor em memória (`InMemoryCosmosClient`, `InMemoryContainer`, `FakeCosmosHandler`, gateway HTTP compatível com o SDK oficial `Microsoft.Azure.Cosmos`).
+- **Troca transparente via Connection String (`AddCosmosDb`):** registra o `CosmosClient` oficial da Microsoft em produção e ativa o emulador em memória quando `ConnectionStrings:CosmosDb` aponta para o Phantom (`https://phantom.local/`, `phantom://in-memory` ou flags `Mode=InMemory;` / `UsePhantom=true;`).
+- **Motor de Alta Fidelidade (`Phantom.CosmosDB.Core`):**
+  - **CRUD & Stream APIs:** `Create`, `Read`, `Upsert`, `Replace`, `Delete`, `Patch` (`Set`, `Add`, `Replace`, `Remove`, `Increment`, `Move`, `FilterPredicate`), `ReadMany` e `DeleteAllItemsByPartitionKey`.
+  - **SQL Engine completo (125+ funções):** `SELECT`, `DISTINCT`, `TOP`, `VALUE`, `JOIN`, `GROUP BY`, `HAVING`, `ORDER BY` (inclusive multi-propriedade com `CompositeIndexes`), `OFFSET/LIMIT`, subqueries `ARRAY(...)` e `EXISTS(...)`, `LIKE ... ESCAPE`, `BETWEEN`, `IN`, `??`, ternário `? :` e `ComputedProperties`.
+  - **Geolocalização (GeoJSON RFC 7946):** suporte a `Point`, `Polygon`, `MultiPolygon` e `LineString`, `GeospatialType` (`Geography` WGS84 e `Geometry` Euclidiano), `SpatialIndexes` e funções `ST_DISTANCE`, `ST_WITHIN`, `ST_INTERSECTS`, `ST_ISVALID`, `ST_ISVALIDDETAILED`, `ST_AREA` e `ST_LENGTH`.
+  - **Particionamento & Consistência:** Single e `MultiHash` (até 3 níveis), `UniqueKeys`, `ETag` (`If-Match` / `If-None-Match`), `DefaultTimeToLive` + `_ttl` por item, `IndexingMode.None` + `EnableScanInQuery`.
+  - **Transações, Change Feed & Scripts:** `TransactionalBatch` (atômico e `ContinueOnError`), `ChangeFeed` (`Incremental` e `AllVersionsAndDeletes`), `FeedRange`, Stored Procedures, Triggers (`Pre`/`Post`) e UDFs (C# ou JavaScript via `Phantom.CosmosDB.JsTriggers`).
+  - **Persistência & Restore:** `ExportState*`, `ImportState*` e `RestoreToPointInTime`.
+- **Auto-Seeding automático (`IHostedService`):** lê `Resources/Seeds/*.json` e popula os containers no startup antes da API receber requisições (`UpsertItemAsync` idempotente).
+- **Chaos Engineering (Arquivo + Live):** injeta latência, throttling (`429`, substatus `3200`) e erros HTTP (`503`, `408`, `400`, `401`, `403`, `409`, `412`, `413`), configurável no `phantom.config.json` ou ao vivo pelo Dashboard.
+- **PhantomDB Dashboard (`/phantom`):** interface Web embutida estilo Azure Cosmos DB Data Explorer, com Data Explorer SQL + Geo, Seed Generator (com Geohash), Simulador de Custos Azure, Chaos Live, Logs ao vivo e editor de `phantom.config.json`.
+
+---
+
+## Arquitetura do Repositório
+
+1. **`Phantom.CosmosDB.Core`:** Motor em memória organizado em Clean Architecture (`Domain` → `Application` via Portas/DIP → `Infrastructure`) com testes de arquitetura (`ArchitectureFitnessTests`), `InMemoryCosmos`, `InMemoryContainer`, `FakeCosmosHandler` e gateway HTTP compatível com `Microsoft.Azure.Cosmos`.
 2. **`Phantom.CosmosDB.JsTriggers`:** Engine JavaScript (Jint) para Stored Procedures, Triggers e UDFs.
 3. **`Phantom.CosmosDB.ProductionExtensions`:** Extensões auxiliares para interceptação de iteradores em testes.
-4. **`Phantom.CosmosDB`:** Pacote NuGet principal com ativação por Connection String (Strategy Pattern), `phantom.config.json`, Auto-Seeding (`IHostedService`), Chaos Engineering e **PhantomDB Dashboard** (`/phantom`).
+4. **`Phantom.CosmosDB`:** Pacote NuGet principal com ativação por Connection String (Strategy Pattern), `phantom.config.json`, Auto-Seeding (`IHostedService`), Chaos Engineering, Telemetria de RU/Custos e **PhantomDB Dashboard** (`/phantom`).
+
+👉 **[Ver Diagramas de Arquitetura Completos (Camadas, Fluxo e Sequência)](Docs/Architecture.md)**
 
 ---
 
-## 1. Instalação
+## 1. Como Integrar o Phantom.CosmosDB a uma API Existente Localmente
+
+Se você já possui uma API ASP.NET Core usando `Microsoft.Azure.Cosmos` (`CosmosClient`), siga os passos abaixo para rodar e testar **100% localmente em memória** sem alterar seus repositórios ou serviços de domínio.
+
+### Passo 1: Instalar o pacote
+
+No `.csproj` da sua API (por exemplo, `MinhaApi.csproj`):
 
 ```xml
 <ItemGroup>
-    <PackageReference Include="Phantom.CosmosDB" Version="1.0.0" />
+  <PackageReference Include="Phantom.CosmosDB" Version="1.0.0" />
 </ItemGroup>
 ```
 
----
+> **Usando pacote local compilado do repositório?** Gere o `.nupkg` com `dotnet pack src\Phantom.CosmosDB\Phantom.CosmosDB.csproj -c Release -o ./local-nuget` e aponte um `nuget.config` para essa pasta.
 
-## 2. Como Usar (`Program.cs` + `appsettings*.json`)
+### Passo 2: Atualizar o `Program.cs`
 
-A separação de responsabilidades mantém:
-- **`appsettings.json` / `appsettings.Development.json`**: apenas dados de conexão (`ConnectionStrings:CosmosDb`, `DatabaseName`, `ContainerName`), exatamente como em qualquer banco real.
-- **`phantom.config.json`**: criação de containers, políticas e `CosmosChaosEngineering`.
-
-### 2.1 `Program.cs` (único para Dev e Produção)
+Substitua o registro manual do `CosmosClient` por `builder.AddCosmosDb()` e habilite o dashboard com `app.UsePhantomDashboard()`:
 
 ```csharp
 using Phantom.CosmosDB;
@@ -57,16 +69,21 @@ builder.AddCosmosDb();
 
 var app = builder.Build();
 
-// Opcional: habilita a UI Web em /phantom (desativado automaticamente em Production ou modo real)
+// Habilita a UI Web em http://localhost:<porta>/phantom
+// (desativado automaticamente em Production ou quando conectado ao Azure real)
 app.UsePhantomDashboard();
 
 app.Run();
 ```
 
-### 2.2 `appsettings.json` (Produção — Online) vs `appsettings.Development.json` (Local — Memória)
+Seus repositórios, endpoints e serviços continuam injetando `Microsoft.Azure.Cosmos.CosmosClient` normalmente.
+
+### Passo 3: Configurar `appsettings.Development.json` vs `appsettings.json`
+
+Mantenha a Connection String real no `appsettings.json` (ou variáveis de ambiente de produção) e aponte o `appsettings.Development.json` para o Phantom:
 
 ```json
-// appsettings.json (Produção)
+// appsettings.json (Produção — Azure Real)
 {
   "ConnectionStrings": {
     "CosmosDb": "AccountEndpoint=https://sua-conta.documents.azure.com:443/;AccountKey=REAL_KEY==;"
@@ -79,7 +96,7 @@ app.Run();
 ```
 
 ```json
-// appsettings.Development.json (Local - Em Memória)
+// appsettings.Development.json (Local — Em Memória)
 {
   "ConnectionStrings": {
     "CosmosDb": "AccountEndpoint=https://phantom.local/;AccountKey=phantom-in-memory;"
@@ -91,15 +108,15 @@ app.Run();
 }
 ```
 
-**Marcadores aceitos para modo em memória:** `https://phantom.local/`, `https://cosmosphantom.local/`, `https://in-memory.cosmos.local/`, `phantom://in-memory`, ou parâmetros `Mode=InMemory;` / `UsePhantom=true;`.
+**Marcadores aceitos para ativar o modo em memória:**
+`https://phantom.local/`, `https://cosmosphantom.local/`, `https://in-memory.cosmos.local/`, `phantom://in-memory`, ou os parâmetros `Mode=InMemory;` / `UsePhantom=true;`.
 
-> **Guardrail de Segurança:** Se uma Connection String Phantom for detectada com `ASPNETCORE_ENVIRONMENT=Production`, o `AddCosmosDb()` falha imediatamente na inicialização (salvo opt-in explícito via `AllowPhantomInProduction = true`).
+> [!IMPORTANT]
+> **Guardrail de Segurança:** Se uma Connection String Phantom for detectada com `ASPNETCORE_ENVIRONMENT=Production`, o `AddCosmosDb()` falha imediatamente na inicialização para evitar subir produção em memória por engano (salvo opt-in explícito via `AllowPhantomInProduction = true`).
 >
 > **Modo Legado:** `AddCosmosPhantomEmulator(...)` e `UseCosmosPhantomSeederAsync()` continuam suportados para projetos que utilizam a flag `"UseCosmosPhantom": true`.
 
----
-
-## 3. Configuração de Containers e Caos (`phantom.config.json`)
+### Passo 4: Criar `phantom.config.json` (Containers, Índices, Geo e Chaos)
 
 Crie **`phantom.config.json`** na raiz da solução/projeto (ao lado do `.sln`), no `ContentRootPath` ou em `Resources/` *(também há fallback automático para `CosmosPhantom.config.json`)*:
 
@@ -136,6 +153,18 @@ Crie **`phantom.config.json`** na raiz da solução/projeto (ao lado do `.sln`),
         "Name": "Pedidos",
         "PartitionKeyPaths": [ "/tenantId", "/clienteId", "/ano" ],
         "Throughput": 800
+      },
+      {
+        "Name": "Drivers",
+        "PartitionKeyPath": "/city",
+        "GeospatialType": "Geography",
+        "IndexingPolicy": {
+          "IndexingMode": "Consistent",
+          "Automatic": true,
+          "SpatialIndexes": [
+            { "Path": "/location/*", "Types": [ "Point", "Polygon" ] }
+          ]
+        }
       }
     ]
   },
@@ -159,9 +188,7 @@ Crie **`phantom.config.json`** na raiz da solução/projeto (ao lado do `.sln`),
 }
 ```
 
----
-
-## 4. Auto-Seeding (`Resources/Seeds`)
+### Passo 5: (Opcional) Adicionar Auto-Seeding em `Resources/Seeds/`
 
 ```text
 projeto-x/
@@ -170,7 +197,8 @@ projeto-x/
 ├── Resources/
 │   └── Seeds/
 │       ├── Produtos.json
-│       └── Pedidos.json
+│       ├── Pedidos.json
+│       └── Drivers.json
 └── src/
     └── ProjetoX.Api/
         ├── appsettings.json
@@ -178,23 +206,57 @@ projeto-x/
         └── Program.cs
 ```
 
-1. Adicione arquivos JSON com o **mesmo nome do container** em `Resources/Seeds/`.
-2. O conteúdo deve ser um array JSON contendo as propriedades obrigatórias (`id` e a Partition Key configurada).
-3. O seeder roda automaticamente no startup via `CosmosPhantomSeedingHostedService` (idempotente com `UpsertItemAsync`).
+1. Adicione arquivos `.json` com o **mesmo nome do container** em `Resources/Seeds/`.
+2. O conteúdo deve ser um array JSON contendo `id` e a Partition Key configurada.
+3. Ao rodar `dotnet run`, o `CosmosPhantomSeedingHostedService` popula os containers automaticamente antes de a API aceitar tráfego.
+
+### Passo 6: Rodar localmente e abrir o Dashboard
+
+```bash
+dotnet run --project src/ProjetoX.Api
+```
+
+Acesse **`http://localhost:<porta>/phantom`** no navegador. Sua API estará respondendo em memória com dados iniciais carregados, telemetria de RU ativa e todas as ferramentas visuais do Dashboard prontas para uso.
 
 ---
 
-## 5. PhantomDB Dashboard (`/phantom`)
+## 2. PhantomDB Dashboard (`/phantom`)
 
-Com `app.UsePhantomDashboard();` no `Program.cs`, acesse `http://localhost:<porta>/phantom` em `Development` para:
-- **Visão Geral:** listar banco, containers, contagem de itens, `RU/s` e políticas, além de **Reset & Re-seed** em 1 clique.
-- **Data Explorer & SQL:** executar queries SQL em memória, inspecionar JSON, criar/atualizar ou excluir itens.
-- **Chaos Engineering (Live):** ativar/desativar falhas HTTP, throttling e latência em tempo real sem reiniciar a API.
-- **Logs ao Vivo:** acompanhar requisições interceptadas com status, substatus (`1001`, `1004`, `1008`, `3200`), RU/s, duração e SQL.
-- **Editor `phantom.config.json`:** visualizar, formatar e salvar alterações no disco.
+Quando `app.UsePhantomDashboard();` está registrado (em `Development` e modo Phantom), o painel em `http://localhost:<porta>/phantom` oferece:
+
+- **Árvore de Recursos & Visão Geral:** navegação estilo Azure Cosmos DB Data Explorer por bancos e containers, exibindo contagem de itens, `RU/s`, `PartitionKeyPaths`, `UniqueKeys`, `ComputedProperties`, `GeospatialType` e botão **Reset & Re-seed** em 1 clique.
+- **Data Explorer & Query Runner SQL (+ Geo):** execute queries SQL com parâmetros (`@param`), visualize `IndexMetrics` e teste consultas espaciais (`ST_DISTANCE`, `ST_WITHIN`, `ST_INTERSECTS`, `ST_ISVALIDDETAILED`, `ST_AREA`, `ST_LENGTH`), além de criar, editar ou excluir documentos JSON.
+- **Seed Generator (Preview + GeoJSON/Geohash):** crie e visualize arquivos de seed para `Resources/Seeds/*.json`, incluindo geração de geometrias GeoJSON (`Point`, `Polygon`, `MultiPolygon`, `LineString`) com validação e cálculo de **Geohash**.
+- **Simulador de Custos Azure:** projeção de custo mensal (Provisionado `RU/s` vs Serverless) por região Azure (ex.: `brazil-south`, `eastus`) calculada com base nas RUs reais consumidas pelas requisições da sua API.
+- **Chaos Engineering (Live):** ative ou desative falhas HTTP (`429`, `503`, `408`, etc.), probabilidade de throttling e latência em tempo real sem reiniciar a API.
+- **Logs ao Vivo:** acompanhe cada requisição interceptada com método, rota, status HTTP, substatus (`1001`, `1004`, `1008`, `3200`), RU consumida, estimativa de custo Serverless, duração e SQL executada.
+- **Editor `phantom.config.json`:** visualize, formate e salve alterações de configuração diretamente no disco.
 
 ---
 
-## Arquitetura
+## 3. Testes Automatizados sem Host Web (`InMemoryCosmos`)
 
-👉 **[Ver Diagramas de Arquitetura Completos (Fluxo e Sequência)](Docs/Architecture.md)**
+Para testes unitários ou de integração direta com `Phantom.CosmosDB.Core` sem subir ASP.NET Core:
+
+```csharp
+using Phantom.CosmosDB.Core;
+using Microsoft.Azure.Cosmos;
+
+using var cosmos = InMemoryCosmos.Create("Produtos", "/categoria");
+
+await cosmos.Container.CreateItemAsync(
+    new { id = "p1", categoria = "eletronicos", nome = "Teclado", preco = 299.90 },
+    new PartitionKey("eletronicos"));
+
+var iterator = cosmos.Container.GetItemQueryIterator<dynamic>(
+    "SELECT * FROM c WHERE c.preco > 100 ORDER BY c.preco DESC");
+```
+
+Para cenários multi-container, use `InMemoryCosmos.Builder()`:
+
+```csharp
+using var cosmos = InMemoryCosmos.Builder()
+    .AddContainer("Produtos", "/categoria")
+    .AddContainer("Pedidos", new[] { "/tenantId", "/clienteId" })
+    .Build();
+```

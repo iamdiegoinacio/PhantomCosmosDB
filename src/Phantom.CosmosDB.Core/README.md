@@ -1,25 +1,23 @@
-# CosmosDB.InMemoryEmulator
+# Phantom.CosmosDB.Core
 
-A high-fidelity, in-memory implementation of the Azure Cosmos DB SDK for .NET — purpose-built for fast, reliable component and integration testing.
+Motor em memória de alta fidelidade do Azure Cosmos DB SDK para .NET 8 — projetado para testes unitários, de integração e execução local rápida.
 
-**Drop-in replacements for `CosmosClient`, `Database`, and `Container`** — full CRUD, SQL queries, LINQ, patch, batches, change feed, and more. No network, no emulator process, no Docker, no Azure subscription required.
+**Substitutos diretos em memória para `CosmosClient`, `Database` e `Container`** — CRUD completo, SQL Engine (125+ funções incluindo geolocalização `ST_*`), LINQ, patch, transactional batch, change feed, ETag, TTL e mais. Sem rede, sem Docker e sem assinatura Azure.
 
-## Core Types
+## Tipos Principais
 
-| Type | Purpose |
-|------|---------|
-| `InMemoryCosmos` | **Recommended entry point** — one-liner setup with full SDK fidelity, test setup, and fault injection |
-| `FakeCosmosHandler` | HTTP-level interceptor — zero production code changes, full SDK fidelity |
-| `InMemoryContainer` | Backing in-memory storage (used internally; direct usage deprecated in 4.0) |
-| `InMemoryCosmosClient` | Deprecated in 4.0 — use `InMemoryCosmos.Create()` instead |
+| Tipo | Finalidade |
+|------|-----------|
+| `InMemoryCosmos` | **Ponto de entrada recomendado** — setup em uma linha ou via `Builder()`, com fidelidade total de SDK e fault injection |
+| `FakeCosmosHandler` | Interceptador HTTP (`HttpMessageHandler`) — zero alteração em código de produção |
+| `InMemoryContainer` | Implementação interna de `Container` (particionada em `partial` files por área: Core, Items, Query/ChangeFeed, Lifecycle/Setup) |
 
 ## Quick Start
 
 ```csharp
-using CosmosDB.InMemoryEmulator;
+using Phantom.CosmosDB.Core;
 using Microsoft.Azure.Cosmos;
 
-// Recommended: InMemoryCosmos — one-liner, full SDK fidelity
 using var cosmos = InMemoryCosmos.Create("my-container", "/partitionKey");
 
 await cosmos.Container.CreateItemAsync(
@@ -42,20 +40,19 @@ var orders = cosmos.Containers["orders"];
 var products = cosmos.Containers["products"];
 ```
 
-## Test Setup & Fault Injection
+## Setup de Testes & Fault Injection
 
 ```csharp
-// Register UDFs, stored procedures, seed data
+// Registrar UDFs, stored procedures e triggers
 cosmos.SetupContainer("orders").RegisterUdf("myUdf", args => args[0]);
 
-// Inject faults: 429 throttling, 503 errors, timeouts
+// Injetar falhas: throttling 429, 503, timeouts
 cosmos.Handler.FaultInjector = req => new HttpResponseMessage((HttpStatusCode)429);
 ```
 
-## Features
+## Arquitetura Interna
 
-Full CRUD, 125+ SQL functions, LINQ, bulk operations, transactional batches, change feed, patch operations, ETag concurrency, partition keys, TTL, fault injection, DI integration, state persistence, point-in-time restore, unique key policies, computed properties.
-
-## Documentation
-
-Full documentation: [GitHub Wiki](https://github.com/lemonlion/CosmosDB.InMemoryEmulator/wiki)
+- **`Domain/`**: primitivas e validadores puros (sem dependências externas de camada).
+- **`Application/`**: serviços de CRUD, Patch, Batch, ChangeFeed, Scripts e Query Engine (`Parsing`, `Evaluation`, `Functions` com `Registry` declarativo e `GeospatialFunctions`), dependentes apenas de portas em `Application/Contracts/`.
+- **`Infrastructure/`**: adaptadores de armazenamento em memória, gateway HTTP (`CosmosRoutingMessageHandler`, `HybridRowBatchCodec`), interoperabilidade com o SDK e persistência em disco.
+- Limites arquiteturais verificados por `ArchitectureFitnessTests`.

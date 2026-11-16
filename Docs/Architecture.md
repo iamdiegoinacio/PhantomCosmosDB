@@ -1,16 +1,27 @@
 # Arquitetura: Phantom.CosmosDB
 
-Este documento detalha a arquitetura do **Phantom.CosmosDB** em três visões: componentes, ativação orientada por Connection String e fluxo em runtime (Chaos + Telemetria + PhantomDB Dashboard).
+Este documento detalha a arquitetura do **Phantom.CosmosDB** em quatro visões: arquitetura em camadas do motor (`Phantom.CosmosDB.Core`), visão geral de componentes, ativação orientada por Connection String e fluxo em runtime (Chaos + Telemetria + Simulador de Custos + PhantomDB Dashboard).
 
 ---
 
-## 1. Visão Geral de Componentes
+## 1. Clean Architecture do Motor (`Phantom.CosmosDB.Core`)
+
+O núcleo em memória segue **Clean Architecture** e **Ports & Adapters (DIP)**, garantidos por *Fitness Functions* automatizadas em `ArchitectureFitnessTests.cs`:
+
+- **`Domain/`**: primitivas (`ETagValue`, `RequestChargeCalculator`, `ContainerConstants`, `CosmosSubStatusCodes`), parsers/validadores puros (`DocumentValidator`, `UniqueKeyValidator`, `JsonParseHelpers`) e contratos de domínio. **Não depende de `Application` nem de `Infrastructure`.**
+- **`Application/`**: casos de uso e motor de execução (`Crud`, `Patch`, `Batch`, `ChangeFeed`, `Scripts`, `Account`, `Builders`, `Query/Parsing`, `Query/Evaluation`, `Query/Functions` com `Registry` declarativo e `GeospatialFunctions`). Comunica-se com persistência/SDK exclusivamente por portas em `Application/Contracts/` (`IDocumentStore`, `IChangeFeedLog`, `ISdkResponseMapper`, `IFeedIteratorFactory`, `IDynamicContainerRegistry`, `IGatewayClientFactory`). **Não referencia `Infrastructure`.**
+- **`Infrastructure/`**: adaptadores concretos (`Storage/InMemoryItemStore`, `Storage/InMemoryChangeFeedLog`, `HttpGateway/CosmosRoutingMessageHandler`, `GatewayDatabaseLifecycleRouter`, `GatewayContainerLifecycleRouter`, `HybridRowBatchCodec`, `SdkInterop/CosmosResponseFactory`, `FeedIterators/`, `Persistence/`).
+- **Raiz (`CorePortDefaults`, `InMemoryContainer` em `partial` files, `FakeCosmosHandler`)**: Composition Root interno e fachada compatível com `Microsoft.Azure.Cosmos.Container`.
+
+---
+
+## 2. Visão Geral de Componentes
 
 ```mermaid
 flowchart TD
     subgraph ConsumerAPI ["API Consumidora (Host)"]
         AppSettings["appsettings*.json (ConnectionStrings:CosmosDb)"]
-        PhantomCfg["phantom.config.json (Containers & Chaos)"]
+        PhantomCfg["phantom.config.json (Containers, Geo & Chaos)"]
         Program["Program.cs (builder.AddCosmosDb / app.UsePhantomDashboard)"]
         Seeds["Resources/Seeds/*.json"]
     end
@@ -22,6 +33,7 @@ flowchart TD
         HostedSeed["CosmosPhantomSeedingHostedService"]
         Chaos["ChaosEngineeringConfigurator"]
         Telemetry["CosmosPhantomTelemetryHandler"]
+        CostSim["CostSimulator (RU -> Azure USD/BRL)"]
         Registry["CosmosPhantomRuntimeRegistry"]
         Dashboard["PhantomDB Dashboard (/phantom)"]
     end
@@ -37,7 +49,7 @@ flowchart TD
     Parser -->|Mode = Real| AzureStrat
     Parser -->|Mode = Phantom| PhantomStrat
 
-    PhantomStrat -->|Lê topologia & chaos| PhantomCfg
+    PhantomStrat -->|Lê topologia, geo & chaos| PhantomCfg
     PhantomStrat --> Registry
     PhantomStrat --> HostedSeed
     HostedSeed -->|Lê JSONs e popula| Seeds
@@ -45,17 +57,19 @@ flowchart TD
 
     PhantomStrat --> Telemetry
     Telemetry --> Router
+    Telemetry --> CostSim
     Router --> Handler
     Chaos -->|FaultInjector| Handler
     Handler --> InMemDB
 
     Program --> Dashboard
     Dashboard --> Registry
+    Dashboard --> CostSim
 ```
 
 ---
 
-## 2. Ativação Orientada por Connection String (Sequence Diagram)
+## 3. Ativação Orientada por Connection String (Sequence Diagram)
 
 ```mermaid
 sequenceDiagram
@@ -79,13 +93,13 @@ sequenceDiagram
         Strategy->>Strategy: Valida guardrail Production + phantom.config.json
         Strategy-->>App: Registra CosmosClient emulado, Telemetry, Registry e HostedService
         App->>Hosted: Host StartAsync()
-        Hosted->>Core: Cria containers e executa Upsert de Resources/Seeds/*.json
+        Hosted->>Core: Cria containers (Geo, UniqueKeys, ComputedProperties) e executa Upsert de Resources/Seeds/*.json
     end
 ```
 
 ---
 
-## 3. Tempo de Execução: Telemetria, Chaos e Dashboard
+## 4. Tempo de Execução: Telemetria, Chaos e Dashboard
 
 ```mermaid
 sequenceDiagram
@@ -96,7 +110,7 @@ sequenceDiagram
     participant InMem as InMemoryContainer
     participant UI as PhantomDB Dashboard (/phantom)
 
-    Repo->>SDK: ReadItemAsync / Query / CreateItemAsync
+    Repo->>SDK: ReadItemAsync / Query (SQL/Geo) / CreateItemAsync
     SDK->>Tel: HttpRequestMessage
     Tel->>Chaos: Repassa ao FakeCosmosHandler
 
@@ -108,10 +122,10 @@ sequenceDiagram
         Chaos-->>Tel: HTTP 429 (x-ms-substatus: 3200, retry-after)
     end
 
-    Tel->>Tel: Registra status, substatus, RU, duração e SQL no CosmosPhantomTelemetryLog
+    Tel->>Tel: Registra status, substatus, RU, custo Serverless, duração e SQL no CosmosPhantomTelemetryLog
     Tel-->>SDK: HttpResponseMessage
     SDK-->>Repo: Resultado ou CosmosException
 
-    UI->>Tel: GET /phantom/api/logs (live)
+    UI->>Tel: GET /phantom/api/logs (live) e métricas de custo
     UI->>Chaos: PUT /phantom/api/chaos (altera ChaosConfig em runtime)
 ```
