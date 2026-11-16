@@ -1,4 +1,4 @@
-﻿namespace Cosmos.Phantom.SDK.ChaosEngineering;
+namespace Cosmos.Phantom.SDK.ChaosEngineering;
 
 public class ChaosConfig
 {
@@ -9,6 +9,9 @@ public class ChaosConfig
     public int MinLatencyMs { get; set; } = 500;
     public int MaxLatencyMs { get; set; } = 2000;
     
+    /// <summary>Valor do header x-ms-retry-after-ms enviado nas respostas 429 (padrão 1000).</summary>
+    public int RetryAfterMs { get; set; } = 1000;
+
     public bool Simulate429_TooManyRequests { get; set; }
     public bool Simulate503_ServiceUnavailable { get; set; }
     public bool Simulate408_RequestTimeout { get; set; }
