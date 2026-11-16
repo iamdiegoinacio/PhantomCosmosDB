@@ -47,8 +47,8 @@ internal static class CosmosGatewayMetadataGenerator
         collBytes[4] |= 0x80;
         collBytes[7] &= 0x7F;
         return (
-            Convert.ToBase64String(dbBytes).Replace('/', '-').Replace('+', '_'),
-            Convert.ToBase64String(collBytes).Replace('/', '-').Replace('+', '_'));
+            Convert.ToBase64String(dbBytes).Replace('/', '-'),
+            Convert.ToBase64String(collBytes).Replace('/', '-'));
     }
 
     public static string GetDatabaseMetadata(string databaseName, string databaseRid)
@@ -104,11 +104,22 @@ internal static class CosmosGatewayMetadataGenerator
                 var obj = new JObject { ["path"] = si.Path };
                 if (si.SpatialTypes.Count > 0)
                     obj["types"] = new JArray(si.SpatialTypes.Select(t => (JToken)t.ToString()));
+                if (si.BoundingBox != null)
+                {
+                    obj["boundingBox"] = new JObject
+                    {
+                        ["xmin"] = si.BoundingBox.Xmin,
+                        ["ymin"] = si.BoundingBox.Ymin,
+                        ["xmax"] = si.BoundingBox.Xmax,
+                        ["ymax"] = si.BoundingBox.Ymax
+                    };
+                }
                 return obj;
             }));
             indexingPolicyObj["spatialIndexes"] = spatialIndexes;
         }
 
+        var geoType = container.ContainerPropertiesInternal.GeospatialConfig?.GeospatialType ?? Microsoft.Azure.Cosmos.GeospatialType.Geography;
         var metadata = new JObject
         {
             ["id"] = container.Id,
@@ -123,7 +134,7 @@ internal static class CosmosGatewayMetadataGenerator
                 ["version"] = 2
             },
             ["indexingPolicy"] = indexingPolicyObj,
-            ["geospatialConfig"] = new JObject { ["type"] = "Geography" }
+            ["geospatialConfig"] = new JObject { ["type"] = geoType.ToString() }
         };
 
         if (container.DefaultTimeToLive.HasValue)

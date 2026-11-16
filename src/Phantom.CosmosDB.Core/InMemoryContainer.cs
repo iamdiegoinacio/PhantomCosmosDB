@@ -919,7 +919,8 @@ internal class InMemoryContainer : Container, IContainerTestSetup
             _scriptCatalog.UserDefinedFunctions,
             _scriptCatalog.UdfProperties,
             JsTriggerEngine as IJsUdfEngine,
-            ScriptCatalog.UdfPlaceholder);
+            ScriptCatalog.UdfPlaceholder,
+            geospatialType: _containerProperties.GeospatialConfig?.GeospatialType ?? GeospatialType.Geography);
 
     private (string Name, string FromAlias, SqlExpression? Expr)[] GetParsedComputedProperties()
     {

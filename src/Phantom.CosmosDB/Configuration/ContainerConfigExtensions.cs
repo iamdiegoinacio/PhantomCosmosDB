@@ -16,6 +16,9 @@ public static class ContainerConfigExtensions
 
         containerProperties.DefaultTimeToLive = containerConfig.DefaultTimeToLive;
 
+        var geospatialType = ParseGeospatialType(containerConfig.GeospatialType, containerConfig.Name);
+        containerProperties.GeospatialConfig = new GeospatialConfig(geospatialType);
+
         if (containerConfig.UniqueKeys is { Count: > 0 })
         {
             foreach (var keyPaths in containerConfig.UniqueKeys)
@@ -71,9 +74,64 @@ public static class ContainerConfigExtensions
                 }
                 containerProperties.IndexingPolicy.CompositeIndexes.Add(cosmosCompositeList);
             }
+
+            foreach (var spatialIndex in containerConfig.IndexingPolicy.SpatialIndexes)
+            {
+                var spatialPath = new SpatialPath { Path = spatialIndex.Path };
+                foreach (var typeName in spatialIndex.Types)
+                {
+                    spatialPath.SpatialTypes.Add(ParseSpatialType(typeName, containerConfig.Name));
+                }
+
+                if (spatialIndex.BoundingBox != null)
+                {
+                    if (spatialIndex.BoundingBox.Xmin >= spatialIndex.BoundingBox.Xmax ||
+                        spatialIndex.BoundingBox.Ymin >= spatialIndex.BoundingBox.Ymax)
+                    {
+                        throw new Phantom.CosmosDB.Exceptions.CosmosDbEmulatorConfigurationException(
+                            $"O container '{containerConfig.Name}' define BoundingBox inválido no índice espacial '{spatialIndex.Path}': Xmin < Xmax e Ymin < Ymax são obrigatórios.");
+                    }
+
+                    spatialPath.BoundingBox = new BoundingBoxProperties
+                    {
+                        Xmin = spatialIndex.BoundingBox.Xmin,
+                        Ymin = spatialIndex.BoundingBox.Ymin,
+                        Xmax = spatialIndex.BoundingBox.Xmax,
+                        Ymax = spatialIndex.BoundingBox.Ymax
+                    };
+                }
+                else if (geospatialType == GeospatialType.Geometry)
+                {
+                    throw new Phantom.CosmosDB.Exceptions.CosmosDbEmulatorConfigurationException(
+                        $"O container '{containerConfig.Name}' usa GeospatialType='Geometry' e exige 'BoundingBox' no índice espacial '{spatialIndex.Path}'.");
+                }
+
+                containerProperties.IndexingPolicy.SpatialIndexes.Add(spatialPath);
+            }
         }
 
         return containerProperties;
+    }
+
+    private static GeospatialType ParseGeospatialType(string? value, string containerName)
+    {
+        if (string.IsNullOrWhiteSpace(value) || string.Equals(value, "Geography", StringComparison.OrdinalIgnoreCase))
+            return GeospatialType.Geography;
+
+        if (string.Equals(value, "Geometry", StringComparison.OrdinalIgnoreCase))
+            return GeospatialType.Geometry;
+
+        throw new Phantom.CosmosDB.Exceptions.CosmosDbEmulatorConfigurationException(
+            $"GeospatialType inválido '{value}' no container '{containerName}'. Valores suportados: 'Geography' ou 'Geometry'.");
+    }
+
+    private static SpatialType ParseSpatialType(string value, string containerName)
+    {
+        if (Enum.TryParse<SpatialType>(value, ignoreCase: true, out var parsed))
+            return parsed;
+
+        throw new Phantom.CosmosDB.Exceptions.CosmosDbEmulatorConfigurationException(
+            $"SpatialType inválido '{value}' no container '{containerName}'. Valores suportados: Point, LineString, Polygon, MultiPolygon.");
     }
 
     /// <summary>

@@ -53,7 +53,14 @@ internal static class SeedTemplateAnalyzer
         Random random)
     {
         string? nameContext = null;
-        var clone = (JObject)SynthesizeToken(profile.Template, string.Empty, profile, sequenceIndex, random, ref nameContext);
+        (double Lon, double Lat)? geoPoint = null;
+        var clone = (JObject)SynthesizeToken(profile.Template, string.Empty, profile, sequenceIndex, random, ref nameContext, ref geoPoint);
+
+        if (geoPoint.HasValue && clone["geohash"] != null)
+        {
+            var len = Math.Clamp(profile.Template["geohash"]?.ToString().Length ?? 6, 4, 9);
+            clone["geohash"] = GeoSeedSynthesizer.EncodeGeohash(geoPoint.Value.Lat, geoPoint.Value.Lon, len);
+        }
 
         var id = SeedIdGenerator.GenerateId(
             idStrategy,
@@ -76,12 +83,20 @@ internal static class SeedTemplateAnalyzer
         SeedSchemaProfile profile,
         long sequenceIndex,
         Random random,
-        ref string? nameContext)
+        ref string? nameContext,
+        ref (double Lon, double Lat)? geoPoint)
     {
         switch (templateToken)
         {
             case JObject obj:
             {
+                if (GeoSeedSynthesizer.TrySynthesizeGeoJson(obj, random, out var geoResult, out var pt))
+                {
+                    if (pt.HasValue && !geoPoint.HasValue)
+                        geoPoint = pt;
+                    return geoResult!;
+                }
+
                 var result = new JObject();
                 foreach (var prop in obj.Properties())
                 {
@@ -95,7 +110,7 @@ internal static class SeedTemplateAnalyzer
                         continue;
                     }
 
-                    result[prop.Name] = SynthesizeToken(prop.Value, childPath, profile, sequenceIndex, random, ref nameContext);
+                    result[prop.Name] = SynthesizeToken(prop.Value, childPath, profile, sequenceIndex, random, ref nameContext, ref geoPoint);
 
                     if (prop.Name.Equals("nome", StringComparison.OrdinalIgnoreCase) ||
                         prop.Name.Equals("name", StringComparison.OrdinalIgnoreCase))
@@ -112,7 +127,7 @@ internal static class SeedTemplateAnalyzer
                 if (arr.Count > 0)
                 {
                     var sample = arr[0];
-                    result.Add(SynthesizeToken(sample, currentPath, profile, sequenceIndex, random, ref nameContext));
+                    result.Add(SynthesizeToken(sample, currentPath, profile, sequenceIndex, random, ref nameContext, ref geoPoint));
                 }
                 return result;
             }

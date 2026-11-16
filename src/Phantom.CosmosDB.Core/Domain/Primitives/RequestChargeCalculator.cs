@@ -27,6 +27,25 @@ internal static class RequestChargeCalculator
     public static double Query(int documentCount, long resultSizeBytes = 0)
         => Round(QueryBaseCharge + (documentCount * QueryPerDocument) + (Kilobytes(resultSizeBytes) * 0.05));
 
+    public static double SpatialQuery(
+        int totalCandidateCount,
+        int returnedCount,
+        long resultSizeBytes,
+        bool hasSpatialIndex,
+        bool usesOrderByDistance)
+    {
+        var baseCharge = hasSpatialIndex ? 2.85 : 6.50;
+        var perReturned = returnedCount * 0.15;
+        var scanPenalty = hasSpatialIndex
+            ? Math.Max(0, totalCandidateCount - returnedCount) * 0.01
+            : totalCandidateCount * 0.45;
+        var orderByCharge = usesOrderByDistance ? (hasSpatialIndex ? 0.85 : 3.20) : 0.0;
+        return Round(baseCharge + perReturned + scanPenalty + orderByCharge + (Kilobytes(resultSizeBytes) * 0.06));
+    }
+
+    public static double SpatialWrite(long itemSizeBytes, int spatialIndexCount)
+        => Round(Write(itemSizeBytes) + (Math.Max(0, spatialIndexCount) * 0.75));
+
     public static double Delete(long itemSizeBytes)
         => Round(Math.Max(MinimumCharge, Math.Ceiling(Kilobytes(itemSizeBytes)) * WritePerKb));
 

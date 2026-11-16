@@ -71,6 +71,12 @@ internal sealed class OverviewAndSeedEndpoint : IDashboardEndpointHandler
                 indexingMode = c.IndexingPolicy.IndexingMode.ToString(),
                 automaticIndexing = c.IndexingPolicy.Automatic,
                 compositeIndexCount = c.IndexingPolicy.CompositeIndexes.Count,
+                geospatialType = (c.ContainerPropertiesInternal.GeospatialConfig?.GeospatialType ?? Microsoft.Azure.Cosmos.GeospatialType.Geography).ToString(),
+                spatialIndexes = c.IndexingPolicy.SpatialIndexes.Select(si => new
+                {
+                    path = si.Path,
+                    types = si.SpatialTypes.Select(t => t.ToString()).ToList()
+                }).ToList(),
                 uniqueKeys = c.UniqueKeyPolicy.UniqueKeys.Select(uk => uk.Paths).ToList(),
                 computedProperties = c.ContainerPropertiesInternal.ComputedProperties
                     .Select(cp => new { cp.Name, cp.Query })

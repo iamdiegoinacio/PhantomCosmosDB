@@ -1,4 +1,5 @@
 #nullable enable
+using Microsoft.Azure.Cosmos;
 using Microsoft.Azure.Cosmos.Scripts;
 
 namespace Phantom.CosmosDB.Core.Application.Query;
@@ -18,6 +19,7 @@ internal sealed class QueryExecutionContext
     public IReadOnlyDictionary<string, UserDefinedFunctionProperties>? UdfProperties { get; }
     public IJsUdfEngine? JsUdfEngine { get; }
     public Func<object?[], object?>? UdfPlaceholder { get; }
+    public GeospatialType GeospatialType { get; }
 
     public QueryExecutionContext(
         IDictionary<string, object?>? parameters = null,
@@ -25,13 +27,15 @@ internal sealed class QueryExecutionContext
         IReadOnlyDictionary<string, UserDefinedFunctionProperties>? udfProperties = null,
         IJsUdfEngine? jsUdfEngine = null,
         Func<object?[], object?>? udfPlaceholder = null,
-        DateTime? nowUtc = null)
+        DateTime? nowUtc = null,
+        GeospatialType geospatialType = GeospatialType.Geography)
     {
         Parameters = parameters ?? new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
         UdfRegistry = udfRegistry;
         UdfProperties = udfProperties;
         JsUdfEngine = jsUdfEngine;
         UdfPlaceholder = udfPlaceholder;
+        GeospatialType = geospatialType;
 
         var now = nowUtc ?? DateTime.UtcNow;
         StaticDateTime = now.ToString("yyyy-MM-ddTHH:mm:ss.fffffffZ");

@@ -88,17 +88,17 @@ internal static class SqlFunctionEvaluator
                 return item["_rid"]?.Value<string>() ?? item["id"]?.Value<string>();
 
             case "ST_DISTANCE":
-                return args.Length >= 2 ? SpatialGeoFunctions.StDistance(args[0], args[1]) : null;
+                return args.Length >= 2 ? SpatialGeoFunctions.StDistance(args[0], args[1], context.GeospatialType == Microsoft.Azure.Cosmos.GeospatialType.Geometry) : null;
             case "ST_WITHIN":
-                return args.Length >= 2 ? (object)SpatialGeoFunctions.StWithin(args[0], args[1]) : null;
+                return args.Length >= 2 ? (object)SpatialGeoFunctions.StWithin(args[0], args[1], context.GeospatialType == Microsoft.Azure.Cosmos.GeospatialType.Geometry) : null;
             case "ST_INTERSECTS":
-                return args.Length >= 2 ? (object)SpatialGeoFunctions.StIntersects(args[0], args[1]) : null;
+                return args.Length >= 2 ? (object)SpatialGeoFunctions.StIntersects(args[0], args[1], context.GeospatialType == Microsoft.Azure.Cosmos.GeospatialType.Geometry) : null;
             case "ST_ISVALID":
-                return args.Length >= 1 ? (object)SpatialGeoFunctions.StIsValid(args[0]) : false;
+                return args.Length >= 1 ? (object)SpatialGeoFunctions.StIsValid(args[0], context.GeospatialType == Microsoft.Azure.Cosmos.GeospatialType.Geometry) : false;
             case "ST_ISVALIDDETAILED":
-                return args.Length >= 1 ? SpatialGeoFunctions.StIsValidDetailed(args[0]) : null;
+                return args.Length >= 1 ? SpatialGeoFunctions.StIsValidDetailed(args[0], context.GeospatialType == Microsoft.Azure.Cosmos.GeospatialType.Geometry) : null;
             case "ST_AREA":
-                return args.Length >= 1 ? SpatialGeoFunctions.StArea(args[0]) : null;
+                return args.Length >= 1 ? SpatialGeoFunctions.StArea(args[0], context.GeospatialType == Microsoft.Azure.Cosmos.GeospatialType.Geometry) : null;
 
             case "VECTORDISTANCE":
                 return args.Length >= 2 ? VectorFunctions.EvaluateVectorDistance(args) : null;

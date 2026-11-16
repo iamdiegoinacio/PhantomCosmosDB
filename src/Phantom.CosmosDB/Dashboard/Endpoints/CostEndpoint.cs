@@ -62,6 +62,18 @@ internal sealed class CostEndpoint : IDashboardEndpointHandler
             return true;
         }
 
+        if (ctx.Method == HttpMethods.Post && ctx.Path.Equals("/api/cost/simulate-fleet", StringComparison.OrdinalIgnoreCase))
+        {
+            var body = await ctx.HttpContext.ReadBodyAsync();
+            var req = JsonConvert.DeserializeObject<GeoFleetSimulationRequest>(body) ?? new GeoFleetSimulationRequest();
+            if (string.IsNullOrWhiteSpace(req.Region))
+                req.Region = ctx.Registry.LiveCostOptions.Region;
+
+            var result = CosmosQueryCostSimulator.SimulateFleet(req);
+            await ctx.HttpContext.WriteJsonAsync(result);
+            return true;
+        }
+
         return false;
     }
 

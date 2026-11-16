@@ -12,14 +12,19 @@ internal sealed class InMemoryFeedResponse<TItem> : FeedResponse<TItem>
 {
     private readonly IReadOnlyList<TItem> _items;
     private readonly bool _populateIndexMetrics;
+    private readonly string? _customIndexMetrics;
 
     public InMemoryFeedResponse(
         IReadOnlyList<TItem> items,
         string? continuationToken = null,
-        bool populateIndexMetrics = false)
+        bool populateIndexMetrics = false,
+        string? customIndexMetrics = null,
+        double requestCharge = 1.0)
     {
         _items = items;
         _populateIndexMetrics = populateIndexMetrics;
+        _customIndexMetrics = customIndexMetrics;
+        RequestCharge = requestCharge;
         ContinuationToken = continuationToken!;
         ActivityId = Guid.NewGuid().ToString();
         var headers = new Headers
@@ -41,10 +46,10 @@ internal sealed class InMemoryFeedResponse<TItem> : FeedResponse<TItem>
     public override CosmosDiagnostics Diagnostics => InMemoryFeedDiagnostics.Instance;
     public override int Count => _items.Count;
     public override string IndexMetrics => _populateIndexMetrics
-        ? "{\"UtilizedSingleIndexes\":[],\"PotentialSingleIndexes\":[],\"UtilizedCompositeIndexes\":[],\"PotentialCompositeIndexes\":[]}"
+        ? (_customIndexMetrics ?? "{\"UtilizedSingleIndexes\":[],\"PotentialSingleIndexes\":[],\"UtilizedCompositeIndexes\":[],\"PotentialCompositeIndexes\":[]}")
         : null!;
     public override string ContinuationToken { get; }
-    public override double RequestCharge => 1;
+    public override double RequestCharge { get; }
     public override string ActivityId { get; }
     public override string ETag => null!;
 

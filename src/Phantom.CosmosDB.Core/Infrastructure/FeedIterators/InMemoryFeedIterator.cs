@@ -69,6 +69,10 @@ public class InMemoryFeedIterator<T> : FeedIterator<T>
     /// </summary>
     public bool PopulateIndexMetrics { get; set; }
 
+    public string? CustomIndexMetrics { get; set; }
+
+    public double PageRequestCharge { get; set; } = 1.0;
+
     /// <summary>
     /// When true, <see cref="HasMoreResults"/> returns true before the first page is read,
     /// even when the result set is empty. This matches real Cosmos DB query iterator behavior.
@@ -91,7 +95,7 @@ public class InMemoryFeedIterator<T> : FeedIterator<T>
 
         var continuationToken = _offset < items.Count ? _offset.ToString() : null;
         return Task.FromResult<FeedResponse<T>>(
-            new InMemoryFeedResponse<T>(page, continuationToken, PopulateIndexMetrics));
+            new InMemoryFeedResponse<T>(page, continuationToken, PopulateIndexMetrics, CustomIndexMetrics, PageRequestCharge));
     }
 
     private IReadOnlyList<T> EnsureItems()
