@@ -1,0 +1,40 @@
+name: Publish Phantom.CosmosDB to NuGet
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore dependencies
+        run: dotnet restore Phantom.CosmosDB.sln
+
+      - name: Build solution (Release)
+        run: dotnet build Phantom.CosmosDB.sln -c Release --no-restore
+
+      - name: Pack Phantom.CosmosDB
+        run: dotnet pack src/Phantom.CosmosDB/Phantom.CosmosDB.csproj -c Release --no-build -o ./nupkg
+
+      - name: NuGet login (Trusted Publishing OIDC)
+        uses: NuGet/login@v1
+        id: login
+        with:
+          user: iamdiegosilva
+
+      - name: Push package to NuGet.org
+        run: dotnet nuget push ./nupkg/*.nupkg --api-key ${{ steps.login.outputs.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate
