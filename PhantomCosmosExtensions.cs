@@ -53,7 +53,7 @@ public static class PhantomCosmosExtensions
             {
                 foreach (var container in emulatorConfig.Containers)
                 {
-                    options.AddContainer(container.Name, container.PartitionKeyPath);
+                    options.AddContainer(container.ToContainerProperties());
                 }
             }
 

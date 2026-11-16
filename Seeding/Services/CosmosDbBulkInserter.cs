@@ -1,4 +1,4 @@
-﻿using Microsoft.Azure.Cosmos;
+using Microsoft.Azure.Cosmos;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -35,27 +35,27 @@ public class CosmosDbBulkInserter(ILogger<CosmosDbBulkInserter> logger) : ICosmo
         }
 
         int count = 0;
-        string partitionKeyPropName = containerConfig.PartitionKeyPath.TrimStart('/');
+        var pkPaths = containerConfig.GetPartitionKeyPaths();
         var tasks = new List<Task>();
 
         foreach (var item in jArray.OfType<JObject>())
         {
-            string pkValue = item[partitionKeyPropName]?.ToString();
-
-            if (string.IsNullOrEmpty(pkValue))
+            if (!TryBuildPartitionKey(item, pkPaths, out var partitionKey))
             {
-                logger.LogWarning("[CosmosDbSeeder] Objeto sem a propriedade de PK '{PkName}' no container '{Container}'. Pulando...", partitionKeyPropName, containerConfig.Name);
+                logger.LogWarning("[CosmosDbSeeder] Objeto sem a(s) propriedade(s) de PK '{PkName}' no container '{Container}'. Pulando...", string.Join(", ", pkPaths), containerConfig.Name);
                 continue;
             }
 
-            tasks.Add(container.CreateItemAsync<dynamic>(item, new PartitionKey(pkValue), null, ct)
-                .ContinueWith(t => 
+            var itemId = item["id"]?.ToString();
+
+            tasks.Add(container.UpsertItemAsync(item, partitionKey, null, ct)
+                .ContinueWith(t =>
                 {
                     if (t.IsCompletedSuccessfully)
                         Interlocked.Increment(ref count);
                     else
-                        logger.LogError(t.Exception, "[CosmosDbSeeder] Falha ao inserir item com PK {PkValue}", pkValue);
-                }, ct));
+                        logger.LogError(t.Exception, "[CosmosDbSeeder] Falha ao inserir item com id {ItemId}", itemId);
+                }, CancellationToken.None));
 
             // Lotes de 50 inserções assíncronas concorrentes
             if (tasks.Count >= 50)
@@ -73,5 +73,47 @@ public class CosmosDbBulkInserter(ILogger<CosmosDbBulkInserter> logger) : ICosmo
         logger.LogInformation("[CosmosDbSeeder] {Count} itens inseridos no container '{Container}'.", count, containerConfig.Name);
         
         return count;
+    }
+
+    private static bool TryBuildPartitionKey(JObject item, IReadOnlyList<string> pkPaths, out PartitionKey partitionKey)
+    {
+        var builder = new PartitionKeyBuilder();
+
+        foreach (var path in pkPaths)
+        {
+            // Suporta caminhos aninhados (ex.: /tenant/id) via SelectToken
+            var token = item.SelectToken(path.TrimStart('/').Replace('/', '.'));
+
+            if (token == null)
+            {
+                partitionKey = default;
+                return false;
+            }
+
+            switch (token.Type)
+            {
+                case JTokenType.String:
+                    var s = token.Value<string>();
+                    if (string.IsNullOrEmpty(s)) { partitionKey = default; return false; }
+                    builder.Add(s);
+                    break;
+                case JTokenType.Integer:
+                case JTokenType.Float:
+                    builder.Add(token.Value<double>());
+                    break;
+                case JTokenType.Boolean:
+                    builder.Add(token.Value<bool>());
+                    break;
+                case JTokenType.Null:
+                    builder.AddNullValue();
+                    break;
+                default:
+                    partitionKey = default;
+                    return false;
+            }
+        }
+
+        partitionKey = builder.Build();
+        return true;
     }
 }
