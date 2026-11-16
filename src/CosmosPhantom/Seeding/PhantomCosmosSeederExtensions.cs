@@ -30,6 +30,12 @@ public static class PhantomCosmosSeederExtensions
             return;
         }
 
+        var tracker = services.GetService<CosmosSeedingExecutionTracker>();
+        if (tracker != null && !tracker.TryMarkExecuted())
+        {
+            return;
+        }
+
         var emulatorConfig = services.GetService<IOptions<CosmosDbEmulatorConfig>>()?.Value;
         if (emulatorConfig == null) return;
 
