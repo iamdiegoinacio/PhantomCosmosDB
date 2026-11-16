@@ -201,101 +201,19 @@ public class FakeCosmosHandler : HttpMessageHandler
             }
         }
 
-        if (method == "GET" && path is "/" or "")
-        {
-            return CosmosHttpHeaders.CreateJsonResponse(
-                CosmosGatewayMetadataGenerator.AccountMetadata,
-                _container.CurrentSessionToken);
-        }
-
-        if (method == "GET" && path.Contains("/pkranges"))
-        {
-            return CosmosGatewayMetadataGenerator.HandlePartitionKeyRanges(
-                request,
-                _databaseRid,
-                _collectionRid,
-                _partitionKeyRangeCount,
-                _container.CurrentSessionToken);
-        }
-
         var scriptsResponse = await GatewayScriptsRouteHandler.TryHandleAsync(request, _container, cancellationToken);
         if (scriptsResponse is not null)
-        {
             return scriptsResponse;
-        }
 
         var usersResponse = await _usersHandler.TryHandleAsync(request, _container.CurrentSessionToken, cancellationToken);
         if (usersResponse is not null)
-        {
             return usersResponse;
-        }
 
-        if (method == "GET" && path.Contains("/colls/") && !path.Contains("/docs"))
-        {
-            return CosmosHttpHeaders.CreateJsonResponse(
-                GetCollectionMetadataInternal(),
-                _container.CurrentSessionToken);
-        }
-
-        if (Regex.IsMatch(path, @"^/dbs/?$"))
-        {
-            if (method == "POST")
-            {
-                var body = request.Content is not null
-                    ? await request.Content.ReadAsStringAsync(cancellationToken)
-                    : "{}";
-                var dbName = JObject.Parse(body)["id"]?.ToString() ?? "fake-db";
-                return CosmosHttpHeaders.CreateJsonResponse(
-                    CosmosGatewayMetadataGenerator.GetDatabaseMetadata(dbName, _databaseRid),
-                    _container.CurrentSessionToken,
-                    HttpStatusCode.Created);
-            }
-
-            var dbList = new JObject
-            {
-                ["_rid"] = "",
-                ["Databases"] = new JArray(JObject.Parse(CosmosGatewayMetadataGenerator.GetDatabaseMetadata("fake-db", _databaseRid))),
-                ["_count"] = 1
-            };
-            return CosmosHttpHeaders.CreateJsonResponse(
-                dbList.ToString(Formatting.None),
-                _container.CurrentSessionToken);
-        }
-
-        if (Regex.IsMatch(path, @"^/dbs/[^/]+/?$"))
-        {
-            var segments = path.Split('/', StringSplitOptions.RemoveEmptyEntries);
-            var dbName = segments.Length > 1 ? Uri.UnescapeDataString(segments[1]) : "fake-db";
-            return method switch
-            {
-                "GET" or "PUT" => CosmosHttpHeaders.CreateJsonResponse(
-                    CosmosGatewayMetadataGenerator.GetDatabaseMetadata(dbName, _databaseRid),
-                    _container.CurrentSessionToken),
-                "DELETE" => CosmosHttpHeaders.CreateNoContentResponse(),
-                _ => new HttpResponseMessage(HttpStatusCode.MethodNotAllowed)
-            };
-        }
-
-        if (Regex.IsMatch(path, @"^/dbs/[^/]+/colls/?$"))
-        {
-            if (method == "POST")
-            {
-                return CosmosHttpHeaders.CreateJsonResponse(
-                    GetCollectionMetadataInternal(),
-                    _container.CurrentSessionToken,
-                    HttpStatusCode.Created);
-            }
-
-            var containerList = new JObject
-            {
-                ["_rid"] = _databaseRid,
-                ["DocumentCollections"] = new JArray(JObject.Parse(GetCollectionMetadataInternal())),
-                ["_count"] = 1
-            };
-            return CosmosHttpHeaders.CreateJsonResponse(
-                containerList.ToString(Formatting.None),
-                _container.CurrentSessionToken);
-        }
+        var metadataResponse = await GatewayMetadataRouteHelper.TryHandleAsync(
+            request, method, path, _container, _databaseRid, _collectionRid, _partitionKeyRangeCount,
+            GetCollectionMetadataInternal, cancellationToken);
+        if (metadataResponse is not null)
+            return metadataResponse;
 
         if (!FaultInjectorIncludesMetadata && FaultInjector is not null)
         {
@@ -359,11 +277,6 @@ public class FakeCosmosHandler : HttpMessageHandler
                 request,
                 _partitionKeyOverride.Value ?? _partitionKeyHint.Value,
                 cancellationToken);
-        }
-
-        if (path.Contains("/offers"))
-        {
-            return CosmosGatewayMetadataGenerator.HandleOffersRequest(_container, _databaseRid, _collectionRid);
         }
 
         return new HttpResponseMessage(HttpStatusCode.NotFound)
@@ -446,9 +359,7 @@ public class FakeCosmosHandler : HttpMessageHandler
 
     internal static HttpMessageHandler CreateRouter(
         IReadOnlyDictionary<string, FakeCosmosHandler> handlers)
-    {
-        return new CosmosRoutingMessageHandler(handlers);
-    }
+        => InMemoryGatewayClientFactory.CreateRouter(handlers);
 
     internal CosmosClient WrapClient(CosmosClient innerClient)
         => WrapClient(innerClient, new Dictionary<string, FakeCosmosHandler> { [_container.Id] = this });
@@ -456,28 +367,14 @@ public class FakeCosmosHandler : HttpMessageHandler
     internal static CosmosClient WrapClient(
         CosmosClient innerClient,
         IReadOnlyDictionary<string, FakeCosmosHandler> handlers)
-        => new PkAwareCosmosClient(innerClient, handlers);
+        => InMemoryGatewayClientFactory.WrapClient(innerClient, handlers);
 
     internal CosmosClient CreateClient()
         => CreateClient(new Dictionary<string, FakeCosmosHandler> { [_container.Id] = this });
 
     internal static CosmosClient CreateClient(
         Dictionary<string, FakeCosmosHandler> handlers)
-    {
-        HttpMessageHandler httpHandler = handlers.Count == 1
-            ? handlers.Values.First()
-            : CreateRouter(handlers);
-
-        var innerClient = new CosmosClient(
-            FakeConnectionString,
-            new CosmosClientOptions
-            {
-                ConnectionMode = ConnectionMode.Gateway,
-                HttpClientFactory = () => new HttpClient(httpHandler)
-            });
-
-        return WrapClient(innerClient, handlers);
-    }
+        => InMemoryGatewayClientFactory.CreateClient(handlers);
 
     /// <summary>
     /// Runs a self-test to verify that the current Cosmos SDK version still uses the
