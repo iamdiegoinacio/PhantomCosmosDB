@@ -22,7 +22,9 @@ namespace Phantom.CosmosDB.Dashboard;
 
 internal sealed class CosmosPhantomDashboardMiddleware
 {
-    private static readonly Lazy<string> DashboardHtml = new(LoadEmbeddedDashboardHtml);
+    private static readonly Lazy<string> DashboardHtml = new(() => LoadEmbeddedDashboardAsset("index.html"));
+    private static readonly Lazy<string> DashboardCss = new(() => LoadEmbeddedDashboardAsset("styles.css"));
+    private static readonly Lazy<string> DashboardJs = new(() => LoadEmbeddedDashboardAsset("app.js"));
     private readonly RequestDelegate _next;
     private readonly string _routePrefix;
 
@@ -43,10 +45,23 @@ internal sealed class CosmosPhantomDashboardMiddleware
 
         if (method == HttpMethods.Get && (path == string.Empty || path == "/"))
         {
-            var html = DashboardHtml.Value.Replace("__PHANTOM_BASE_PATH__", _routePrefix, StringComparison.Ordinal);
-            context.Response.StatusCode = StatusCodes.Status200OK;
-            context.Response.ContentType = "text/html; charset=utf-8";
-            await context.Response.WriteAsync(html, Encoding.UTF8, context.RequestAborted);
+            await WriteTextAsync(context,
+                DashboardHtml.Value.Replace("__PHANTOM_BASE_PATH__", _routePrefix, StringComparison.Ordinal),
+                "text/html; charset=utf-8");
+            return;
+        }
+
+        if (method == HttpMethods.Get && path.Equals("/assets/styles.css", StringComparison.OrdinalIgnoreCase))
+        {
+            await WriteTextAsync(context, DashboardCss.Value, "text/css; charset=utf-8");
+            return;
+        }
+
+        if (method == HttpMethods.Get && path.Equals("/assets/app.js", StringComparison.OrdinalIgnoreCase))
+        {
+            await WriteTextAsync(context,
+                DashboardJs.Value.Replace("__PHANTOM_BASE_PATH__", _routePrefix, StringComparison.Ordinal),
+                "application/javascript; charset=utf-8");
             return;
         }
 
@@ -442,10 +457,17 @@ internal sealed class CosmosPhantomDashboardMiddleware
         await context.Response.WriteAsync(json, Encoding.UTF8, context.RequestAborted);
     }
 
-    private static string LoadEmbeddedDashboardHtml()
+    private static async Task WriteTextAsync(HttpContext context, string content, string contentType)
+    {
+        context.Response.StatusCode = StatusCodes.Status200OK;
+        context.Response.ContentType = contentType;
+        await context.Response.WriteAsync(content, Encoding.UTF8, context.RequestAborted);
+    }
+
+    private static string LoadEmbeddedDashboardAsset(string fileName)
     {
         var assembly = Assembly.GetExecutingAssembly();
-        const string resourceName = "Phantom.CosmosDB.Resources.Dashboard.index.html";
+        var resourceName = $"Phantom.CosmosDB.Resources.Dashboard.{fileName}";
         using var stream = assembly.GetManifestResourceStream(resourceName)
                            ?? throw new InvalidOperationException($"Embedded resource '{resourceName}' não encontrado.");
         using var reader = new StreamReader(stream, Encoding.UTF8);

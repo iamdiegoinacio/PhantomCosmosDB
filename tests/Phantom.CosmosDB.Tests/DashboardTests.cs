@@ -46,11 +46,21 @@ public sealed class DashboardTests
 
             var http = app.GetTestClient();
 
-            // 1. HTML UI
+            // 1. HTML UI + separated CSS/JS assets
             var htmlResp = await http.GetAsync("/_phantom");
             Assert.Equal(HttpStatusCode.OK, htmlResp.StatusCode);
             var html = await htmlResp.Content.ReadAsStringAsync();
             Assert.Contains("PhantomDB Dashboard", html, StringComparison.Ordinal);
+            Assert.Contains("/_phantom/assets/styles.css", html, StringComparison.Ordinal);
+            Assert.Contains("/_phantom/assets/app.js", html, StringComparison.Ordinal);
+
+            var cssResp = await http.GetAsync("/_phantom/assets/styles.css");
+            Assert.Equal(HttpStatusCode.OK, cssResp.StatusCode);
+            Assert.Equal("text/css", cssResp.Content.Headers.ContentType?.MediaType);
+
+            var jsResp = await http.GetAsync("/_phantom/assets/app.js");
+            Assert.Equal(HttpStatusCode.OK, jsResp.StatusCode);
+            Assert.Equal("application/javascript", jsResp.Content.Headers.ContentType?.MediaType);
 
             // 2. Overview
             var overview = JObject.Parse(await http.GetStringAsync("/_phantom/api/overview"));
