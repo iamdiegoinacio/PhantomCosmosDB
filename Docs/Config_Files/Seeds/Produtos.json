@@ -1,0 +1,18 @@
+[
+  {
+    "id": "11111111-1111-1111-1111-111111111111",
+    "categoria": "eletronicos",
+    "nome": "Teclado Mecanico",
+    "sku": "SKU-TEC-001",
+    "preco": 299.90,
+    "ativo": true
+  },
+  {
+    "id": "22222222-2222-2222-2222-222222222222",
+    "categoria": "eletronicos",
+    "nome": "Mouse Sem Fio",
+    "sku": "SKU-MOU-002",
+    "preco": 149.50,
+    "ativo": true
+  }
+]

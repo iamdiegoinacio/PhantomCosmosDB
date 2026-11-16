@@ -28,6 +28,13 @@
       }
     ]
   },
+  "CosmosCostOptions": {
+    "Region": "brazil-south",
+    "BillingMode": "Serverless",
+    "LogQueryCost": true,
+    "ApplyFreeTier": false,
+    "ConsistencyLevel": "Session"
+  },
   "CosmosChaosEngineering": {
     "EnableRandomThrottling": false,
     "ThrottlingProbability": 0.2,
